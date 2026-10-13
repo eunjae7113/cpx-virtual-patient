@@ -890,14 +890,16 @@
     tg.globalCompositeOperation = 'destination-in'; tg.drawImage(soft, 0, 0);
     sg.save(); sg.setTransform(1, 0, 0, 1, 0, 0); sg.globalCompositeOperation = 'multiply'; sg.drawImage(t, cx - n, cy - n); sg.restore();
   }
-  // 눈 하나 워프: 홍채(반지름 r)를 (dx, dy)만큼 통째로 옮기고, 그 둘레(흰자·눈꺼풀)는 늘이고 줄여 메움. 눈꼬리(±2.1r)·눈썹은 그대로
-  // 위아래 시선이면 눈꺼풀도 같이 따라감(실제 눈과 같음). f: 옆을 볼 때 홍채가 좁아 보이는 정도
+  // 눈 하나 워프: 홍채(반지름 r)를 (dx, dy)만큼 통째로 옮기고, 그 둘레 흰자는 늘이고 줄여 메움. 눈꼬리(±2.1r)·눈썹은 그대로
+  // 옆 시선: 눈 뜬 틈(아몬드 모양)만 움직임 — 실제처럼 눈꺼풀·쌍꺼풀 선은 제자리(전에는 띠째 옮겨 쌍꺼풀이 구겨졌음)
+  // 위아래 시선: 눈꺼풀도 같이 따라감(실제 눈과 같음). 넓고 부드럽게 줄어들게 해 눈꼬리 쪽 쌍꺼풀이 꺾이지 않게
+  // f: 옆을 볼 때 홍채가 좁아 보이는 정도
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   function warpEye(P, e, dx, dy, f) {
     const key = dx.toFixed(1) + ',' + dy.toFixed(1) + ',' + f.toFixed(3);
     if (e.wkey === key) return; e.wkey = key;
     const { cx, cy, r } = e, w = P.w, h = P.h, src = P.px;
-    const x0 = Math.max(0, Math.floor(cx - 2.3 * r)), x1 = Math.min(w - 1, Math.ceil(cx + 2.3 * r));
+    const x0 = Math.max(0, Math.floor(cx - 2.7 * r)), x1 = Math.min(w - 1, Math.ceil(cx + 2.7 * r));
     const y0 = Math.max(0, Math.floor(cy - 2.6 * r)), y1 = Math.min(h - 1, Math.ceil(cy + 2.3 * r));
     const rw = x1 - x0, rh = y1 - y0;
     if (!e.wimg || e.wimg.width !== rw || e.wimg.height !== rh) e.wimg = new ImageData(rw, rh);
@@ -905,22 +907,28 @@
     const xa = cx - 2.1 * r, xb = cx + 2.1 * r, ya = cy - 2.5 * r, yb = cy + 2.2 * r;
     const ix0 = cx + dx - r * f, ix1 = cx + dx + r * f, iy0 = cy + dy - r, iy1 = cy + dy + r;
     const pw = (x, a, b, A, B) => A + (x - a) * (B - A) / (b - a);
-    const HX = new Float32Array(rw), HW = new Float32Array(rw), VY = new Float32Array(rh), VW = new Float32Array(rh);
+    const HX = new Float32Array(rw), HW = new Float32Array(rw), HH = new Float32Array(rw), VY = new Float32Array(rh);
     for (let i = 0; i < rw; i++) {
       const x = x0 + i;
       HX[i] = x <= xa || x >= xb ? x : x < ix0 ? pw(x, xa, ix0, xa, cx - r) : x <= ix1 ? pw(x, ix0, ix1, cx - r, cx + r) : pw(x, ix1, xb, cx + r, xb);
-      HW[i] = 1 - smooth(1.5 * r, 2.25 * r, Math.abs(x - cx));       // 위아래 이동은 눈 폭 안에서만
+      HW[i] = 1 - smooth(0.9 * r, 2.6 * r, Math.abs(x - cx));       // 위아래 이동: 눈 가운데서 눈꼬리 밖까지 천천히 줄어듦
+      // 눈 뜬 틈의 반높이(아몬드): 가운데 1.05r, 눈꼬리(±2.2r)로 갈수록 0 + 여유 0.1r
+      HH[i] = 1.05 * r * Math.sqrt(Math.max(0, 1 - ((x - cx) / (2.2 * r)) ** 2)) + 0.1 * r;
     }
     for (let j = 0; j < rh; j++) {
       const y = y0 + j;
       VY[j] = y <= ya || y >= yb ? y : y < iy0 ? pw(y, ya, iy0, ya, cy - r) : y <= iy1 ? pw(y, iy0, iy1, cy - r, cy + r) : pw(y, iy1, yb, cy + r, yb);
-      VW[j] = 1 - smooth(1.05 * r, 1.8 * r, Math.abs(y - cy));      // 좌우 이동은 눈 높이 띠에서만
     }
+    // 위아래 이동량의 꺾인 곳(홍채 위아래 끝)을 둥글게: 단조 증가 배열을 이동 평균(순서는 그대로 유지됨)
+    const bk = Math.max(1, Math.round(r * 0.25)), VS = new Float32Array(rh);
+    for (let j = 0; j < rh; j++) { let s = 0, n = 0; for (let q = Math.max(0, j - bk); q <= Math.min(rh - 1, j + bk); q++) { s += VY[q] - (y0 + q); n++; } VS[j] = y0 + j + s / n; }
     for (let j = 0; j < rh; j++) {
       const y = y0 + j;
       for (let i = 0; i < rw; i++) {
         const x = x0 + i;
-        let sx = x + VW[j] * (HX[i] - x), sy = y + HW[i] * (VY[j] - y);
+        // 좌우 이동은 아몬드 안에서만(눈꺼풀과 같이 올라간 눈 중심 기준), 경계 0.3r 에서 부드럽게 0
+        const ay = Math.abs(y - cy - dy * HW[i]), aw = 1 - smooth(HH[i], HH[i] + 0.3 * r, ay);
+        let sx = x + aw * (HX[i] - x), sy = y + HW[i] * (VS[j] - y);
         sx = clamp(sx, 0, w - 1.001); sy = clamp(sy, 0, h - 1.001);
         const xi = sx | 0, yi = sy | 0, fx = sx - xi, fy = sy - yi, a = (yi * w + xi) * 4, b = a + w * 4, o = (j * rw + i) * 4;
         for (let c = 0; c < 3; c++) {
