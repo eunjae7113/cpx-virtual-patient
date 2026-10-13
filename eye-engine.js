@@ -801,6 +801,9 @@
     const ox = EYE.R.cx - R[0] * k, oy = (EYE.R.cy + EYE.L.cy) / 2 - (R[1] + L[1]) / 2 * k;
     const data = sg.getImageData(0, 0, w, h).data, lum = (x, y) => { const i = ((y | 0) * w + (x | 0)) * 4; return (data[i] + data[i + 1] + data[i + 2]) / 3; };
     const eyes = {};
+    // 눈꺼풀 자리(tools/eye_marks.py 가 사진에서 재거나 손으로 적은 값, r 단위). 좌우 반전이면 눈이 바뀌고 기울기(b)의 부호가 바뀜
+    const ML = m.lids || {}, fl = (o) => o && p.mirror && o.U ? { U: [o.U[0], -o.U[1], o.U[2]], Lo: o.Lo } : o;
+    const LD = { R: fl(p.mirror ? ML.L : ML.R), L: fl(p.mirror ? ML.R : ML.L) };
     for (const [s, e] of [['R', R], ['L', L]]) {
       const [cx, cy, r] = e, n = Math.ceil(r * 1.1), size = n * 2;
       // 흰자 밝기: 홍채 양옆(1.4r~1.9r)에서
@@ -821,7 +824,7 @@
       mg.putImageData(md, 0, 0);
       const soft = makeCanvas(size, size), so = soft.getContext('2d'); so.filter = 'blur(1px)'; so.drawImage(mask, 0, 0);
       // 아랫눈꺼풀 자리(가운데): 보이는 홍채 아래 끝. 홍채가 다 보이면(눈꺼풀이 안 덮음) 1.05r
-      const lidL = clamp(bot / r + 0.03, 0.55, 1.05) * r;
+      const lidL = (LD[s] && LD[s].Lo ? clamp(LD[s].Lo, 0.55, 1.05) : clamp(bot / r + 0.03, 0.55, 1.05)) * r;
       // 윗눈꺼풀 자리(열마다): 흰자에서 위로 올라가다 처음 어두운 속눈썹 선을 만나는 곳. 옆 시선 때 그 아래(눈알)만 옮기려고
       // 홍채 열(가운데 ±1.15r)은 아몬드 한계값 그대로(홍채가 어두워 못 잼, 여기 눈꺼풀 선은 거의 수평이라 옆으로 끌어도 티 안 남)
       // 못 찾으면 한계값(lidCap) → 틀려도 전보다 나빠지지 않음
@@ -830,7 +833,9 @@
       for (let k = -nT; k <= nT; k++) {
         const x = cx + k, ax = Math.abs(k), cap = lidCap(ax);
         let v = cap;
-        if (ax >= r * 1.15 && x >= 0 && x < w) {
+        if (LD[s] && LD[s].U) {                   // marks 의 윗눈꺼풀 곡선이 있으면 그것(어린이·처진 눈꺼풀은 자동으로 못 재서 손으로 적음)
+          const t = k / r, U = LD[s].U; v = clamp((U[0] * t * t + U[1] * t + U[2]) * r, 0.05 * r, cap);
+        } else if (ax >= r * 1.15 && x >= 0 && x < w) {
           let y0 = cy, best = -1;
           for (let y = cy - r * 0.3; y <= cy + r * 0.3; y++) { const L0 = lum(x, y); if (L0 > best) { best = L0; y0 = y; } }
           if (best > sclera * 0.6) {               // 흰자가 보이는 열만 잼(눈꼬리 분홍 살·피부 열은 한계값)
@@ -842,7 +847,37 @@
       }
       const bw = Math.max(1, Math.round(r * 0.15)), lidTs = new Float32Array(lidT.length);   // 들쭉날쭉한 열 값을 이동 평균
       for (let k = 0; k < lidT.length; k++) { let s2 = 0, c2 = 0; for (let q = Math.max(0, k - bw); q <= Math.min(lidT.length - 1, k + bw); q++) { s2 += lidT[q]; c2++; } lidTs[k] = s2 / c2; }
-      eyes[s] = { cx, cy, r, n, lidL, lidT: lidTs, nT, mask: soft, iris: cn ? [cr / cn, cgr / cn, cb / cn] : [70, 45, 30], tmp: makeCanvas(size, size) };
+      // 실제 홍채 크기(가로): 가운데 줄에서 홍채와 흰자 밝기의 중간을 넘는 곳까지. marks 의 r 은 50px 로 막혀 있어 어린이 사진은 작게 나옴
+      //   → 워프(홍채를 통째로 옮기는 범위·흰자 배경판에서 지우는 범위)는 rI 로. 동공 크기는 그대로 r 기준. 잘못 재도 r~1.2r
+      let rI = r;
+      { const im0 = []; for (let q = -0.4; q <= 0.4; q += 0.1) im0.push(lum(cx + q * r, cy)); im0.sort((a2, b2) => a2 - b2);
+        const mid = (im0[(im0.length / 2) | 0] + sclera) / 2, wl2 = [];
+        for (const dir of [-1, 1]) { let x = cx; while (Math.abs(x - cx) < 1.5 * r && (lum(x, cy - 1) + lum(x, cy) + lum(x, cy + 1)) / 3 < mid) x += dir; wl2.push(Math.abs(x - cx)); }
+        rI = clamp((wl2[0] + wl2[1]) / 2, r, 1.2 * r); }
+      // 아랫눈꺼풀 선(가운데 lidL, 눈꼬리 ±2.1r 에서 0 인 포물선, 조금 안쪽으로): 위아래 시선 때 이 아래(아랫눈꺼풀·눈 밑·볼)는 그대로
+      const lowB = (x) => Math.max(0, lidL - 0.04 * r) * Math.max(0, 1 - ((x - cx) / (1.95 * r)) ** 2) ** 1.3;   // 눈꼬리 쪽으로 더 좁게(어긋나면 피부가 끌려 옴)
+      // 흰자 배경판: 홍채를 지우고 그 줄의 왼쪽·오른쪽 흰자 색을 이어 칠한 판. 위를 볼 때 홍채 아래로 새로 드러나는 흰자를 메울 때 씀
+      //   홍채 옆이 아랫눈꺼풀에 가린 줄은 가운데에 더 가까운 줄의 색을 이어 씀
+      const pX0 = Math.max(0, Math.floor(cx - 2.7 * r)), pY0 = Math.max(0, Math.floor(cy - 1.2 * r));
+      const pW = Math.min(w - 1, Math.ceil(cx + 2.7 * r)) - pX0, pH = Math.min(h - 1, Math.ceil(cy + 1.6 * r)) - pY0;
+      const plate = new Float32Array(pW * pH * 3);
+      for (let j = 0; j < pH; j++) for (let i = 0; i < pW; i++) { const q = ((pY0 + j) * w + pX0 + i) * 4, o = (j * pW + i) * 3; plate[o] = data[q]; plate[o + 1] = data[q + 1]; plate[o + 2] = data[q + 2]; }
+      const avg3 = (x, y, dir) => { const v = [0, 0, 0]; for (let q = 0; q < 3; q++) { const i = ((y | 0) * w + ((x + dir * q * 2) | 0)) * 4; v[0] += data[i] / 3; v[1] += data[i + 1] / 3; v[2] += data[i + 2] / 3; } return v; };
+      const RIp = 1.06 * rI;
+      for (const dir of [-1, 1]) {
+        let cl = null, cr2 = null;
+        for (let yy = Math.round(cy); Math.abs(yy - cy) < RIp && yy >= pY0 && yy < pY0 + pH; yy += dir) {
+          const hw = Math.sqrt(Math.max(0, RIp * RIp - (yy - cy) ** 2)), xl = cx - hw - 2, xr = cx + hw + 2;
+          if (yy - cy < lowB(xl) - 1 || !cl) cl = avg3(xl, yy, -1);
+          if (yy - cy < lowB(xr) - 1 || !cr2) cr2 = avg3(xr, yy, 1);
+          for (let x = Math.ceil(xl); x <= xr; x++) {
+            const i = x - pX0; if (i < 0 || i >= pW) continue;
+            const u = (x - xl) / (xr - xl), o = ((yy - pY0) * pW + i) * 3;
+            for (let ch = 0; ch < 3; ch++) plate[o + ch] = cl[ch] + (cr2[ch] - cl[ch]) * u;
+          }
+        }
+      }
+      eyes[s] = { cx, cy, r, rI, n, lidL, lowB, plate, pX0, pY0, pW, pH, lidT: lidTs, nT, mask: soft, iris: cn ? [cr / cn, cgr / cn, cb / cn] : [70, 45, 30], tmp: makeCanvas(size, size) };
     }
     if (p.paint) for (const s of ['R', 'L']) paintSclera(sg, data, w, eyes[s], S[s], ves[s], s);
     const px = p.paint ? sg.getImageData(0, 0, w, h).data : data;          // 워프할 때 읽는 원본 픽셀
@@ -915,58 +950,78 @@
   }
   // 눈 하나 워프: 홍채(반지름 r)를 (dx, dy)만큼 통째로 옮기고, 그 둘레 흰자는 늘이고 줄여 메움. 눈꼬리(±2.1r)·눈썹은 그대로
   // 옆 시선: 눈 뜬 틈(아몬드 모양)만 움직임 — 실제처럼 눈꺼풀·쌍꺼풀 선은 제자리(전에는 띠째 옮겨 쌍꺼풀이 구겨졌음)
-  // 위아래 시선: 윗눈꺼풀은 따라가고 아랫눈꺼풀은 조금만, 눈 밑·볼은 그대로(아래 F). 옆으로는 넓고 부드럽게 줄어 눈꼬리 쪽이 안 꺾임
+  // 위아래 시선: 윗눈꺼풀은 따라가고(실제 눈과 같음), 아랫눈꺼풀·눈 밑·볼은 그대로(아랫눈꺼풀 선 lowB 아래는 안 움직임).
+  //   아래를 보면 홍채가 아랫눈꺼풀 뒤로 들어가고, 위를 보면 홍채 아래로 새로 드러나는 흰자는 흰자 배경판에서,
+  //   가려 있던 홍채 아랫부분은 같은 반지름의 보이는 무늬로 메움. 옆으로는 넓고 부드럽게 줄어 눈꼬리 쪽이 안 꺾임
   // f: 옆을 볼 때 홍채가 좁아 보이는 정도
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   function warpEye(P, e, dx, dy, f) {
     const key = dx.toFixed(1) + ',' + dy.toFixed(1) + ',' + f.toFixed(3);
     if (e.wkey === key) return; e.wkey = key;
-    const { cx, cy, r, lidL, lidT, nT } = e, w = P.w, h = P.h, src = P.px;
+    const { cx, cy, r, rI, lidL, lowB, lidT, nT } = e, w = P.w, h = P.h, src = P.px;
     const x0 = Math.max(0, Math.floor(cx - 2.7 * r)), x1 = Math.min(w - 1, Math.ceil(cx + 2.7 * r));
     const y0 = Math.max(0, Math.floor(cy - 2.6 * r)), y1 = Math.min(h - 1, Math.ceil(cy + 2.3 * r));
     const rw = x1 - x0, rh = y1 - y0;
     if (!e.wimg || e.wimg.width !== rw || e.wimg.height !== rh) e.wimg = new ImageData(rw, rh);
     const out = e.wimg.data;
     const xa = cx - 2.1 * r, xb = cx + 2.1 * r;
-    const ix0 = cx + dx - r * f, ix1 = cx + dx + r * f;
+    const ix0 = cx + dx - rI * f, ix1 = cx + dx + rI * f;
     const pw = (x, a, b, A, B) => A + (x - a) * (B - A) / (b - a);
     const HX = new Float32Array(rw), HW = new Float32Array(rw), HU = new Float32Array(rw), HF = new Float32Array(rw), HL = new Float32Array(rw);
     for (let i = 0; i < rw; i++) {
       const x = x0 + i;
-      HX[i] = x <= xa || x >= xb ? x : x < ix0 ? pw(x, xa, ix0, xa, cx - r) : x <= ix1 ? pw(x, ix0, ix1, cx - r, cx + r) : pw(x, ix1, xb, cx + r, xb);
-      HW[i] = 1 - smooth(0.9 * r, 2.6 * r, Math.abs(x - cx));       // 위아래 이동: 눈 가운데서 눈꼬리 밖까지 천천히 줄어듦
+      HX[i] = x <= xa || x >= xb ? x : x < ix0 ? pw(x, xa, ix0, xa, cx - rI) : x <= ix1 ? pw(x, ix0, ix1, cx - rI, cx + rI) : pw(x, ix1, xb, cx + rI, xb);
+      HW[i] = 1 - smooth(0.9 * r, 2.0 * r, Math.abs(x - cx));       // 위아래 이동: 눈 가운데서 눈꼬리 쪽으로 줄어듦(눈꼬리는 경계가 덜 정확해 피부가 끌려 옴)
       // 눈 뜬 틈의 위·아래 반높이: 위는 사진에서 잰 윗눈꺼풀 선(lidT, 경계 0.2r), 아래는 사진에서 잰 아랫눈꺼풀 자리(lidL, +0.05r). 눈꼬리(±2.2r)로 갈수록 0
       const q = Math.sqrt(Math.max(0, 1 - ((x - cx) / (2.2 * r)) ** 2));
       const k = Math.round(x - cx) + nT; HU[i] = k >= 0 && k < lidT.length ? lidT[k] : 0.05 * r; HF[i] = 0.2 * r; HL[i] = lidL * q + 0.05 * r;
     }
-    // 위아래 이동량(원본 사진 높이 t = y - cy 에서 얼마나 옮기나): 실제 눈처럼
-    //   윗눈꺼풀은 눈알을 거의 다 따라감(쌍꺼풀 위 2.3r 부터 서서히) · 홍채 = dy 그대로
-    //   아랫눈꺼풀은 35%만 · 눈 밑(1.9r 아래) 다크서클·주름·볼은 그대로 (전에는 볼까지 같이 늘어나 출렁였음)
-    // 기울기가 1보다 작게 범위를 잡아 접히지 않음
-    const kL = 0.35;
-    const l0 = lidL - 0.35 * r, l1 = lidL + 0.4 * r, l2 = lidL + 0.95 * r;    // 아랫눈꺼풀 자리 기준
-    const F = (t) => t < -r ? dy * smooth(-2.3 * r, -r, t)
-      : t < l0 ? dy
-      : t < l1 ? dy * (1 - (1 - kL) * smooth(l0, l1, t))
-      : dy * kL * (1 - smooth(l1, l2, t));
+    // 위아래 이동량(원본 사진 높이 t = y - cy 에서 얼마나 옮기나): 윗눈꺼풀은 눈알을 따라감(쌍꺼풀 위 2.3r 부터 서서히), 그 아래 눈알 = dy
+    // 아랫눈꺼풀 선(lowB) 아래는 0 → 아래 반복문에서 wl 로 처리
+    const F = (t) => t < -r ? dy * smooth(-2.3 * r, -r, t) : dy;
+    const mg = 0.08 * r, mf = 0.1 * r, RI2 = (1.06 * rI) ** 2;
+    const HB = new Float32Array(rw); for (let i = 0; i < rw; i++) HB[i] = lowB(x0 + i);
+    const samp = (arr, W2, x, y, o, st) => {     // 양선형 보간으로 한 점 읽기(st = 한 픽셀 칸 수: 사진 4, 배경판 3)
+      const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, p0 = (yi * W2 + xi) * st, p1 = p0 + W2 * st;
+      for (let ch = 0; ch < 3; ch++) { const a = arr[p0 + ch] + (arr[p0 + st + ch] - arr[p0 + ch]) * fx, b = arr[p1 + ch] + (arr[p1 + st + ch] - arr[p1 + ch]) * fx; out[o + ch] = a + (b - a) * fy; }
+    };
     for (let j = 0; j < rh; j++) {
       const y = y0 + j;
       for (let i = 0; i < rw; i++) {
         const x = x0 + i;
         // 좌우 이동은 아몬드 안에서만(눈꺼풀과 같이 올라간 눈 중심 기준). 아래쪽은 경계 0.2r 로 좁게 → 아랫눈꺼풀·눈 밑 피부가 옆으로 안 끌림
         // 위쪽은 윗눈꺼풀 선(속눈썹) 아래만: 비스듬한 쌍꺼풀 선을 옆으로 끌면 계단처럼 꺾이므로. 홍채 위는 넉넉히(그늘진 홍채 윗부분까지 같이 옮겨야 자국이 안 남음)
-        const ty = y - cy - dy * HW[i], aw = ty < 0 ? 1 - smooth(HU[i], HU[i] + HF[i], -ty) : 1 - smooth(HL[i], HL[i] + 0.2 * r, ty);
+        const ty = y - cy - dy * HW[i], tyL = y - cy;
+        // 아래쪽 경계는 아랫눈꺼풀이 안 움직이므로 원래 자리(tyL) 기준
+        const aw = ty < 0 ? 1 - smooth(HU[i], HU[i] + HF[i], -ty) : 1 - smooth(HL[i], HL[i] + 0.2 * r, tyL);
+        // 아랫눈꺼풀 선 아래(아랫눈꺼풀·눈 밑·볼)는 위아래로 안 움직임(경계 2.4px 에서 부드럽게)
+        const wl = clamp((HB[i] + 1.2 - tyL) / 2.4, 0, 1);
         // 화면 y 가 원본 어디서 왔나: y = s + HW·F(s - cy) 를 몇 번 되풀이해 풂
         let sy = y;
-        if (dy) for (let q = 0; q < 4; q++) sy = y - HW[i] * F(sy - cy);
-        let sx = x + aw * (HX[i] - x);
-        sx = clamp(sx, 0, w - 1.001); sy = clamp(sy, 0, h - 1.001);
-        const xi = sx | 0, yi = sy | 0, fx = sx - xi, fy = sy - yi, a = (yi * w + xi) * 4, b = a + w * 4, o = (j * rw + i) * 4;
-        for (let c = 0; c < 3; c++) {
-          const top = src[a + c] + (src[a + 4 + c] - src[a + c]) * fx, bot = src[b + c] + (src[b + 4 + c] - src[b + c]) * fx;
-          out[o + c] = top + (bot - top) * fy;
-        }
+        if (dy && wl > 0) { for (let q = 0; q < 4; q++) sy = y - HW[i] * F(sy - cy); sy = y + wl * (sy - y); }
+        const sx = clamp(x + aw * (HX[i] - x), 0, w - 1.001);
+        sy = clamp(sy, 0, h - 1.001);
+        const o = (j * rw + i) * 4;
         out[o + 3] = 255;
+        // 드러나는 곳 판정은 화면 열(x)의 아랫눈꺼풀 선 기준(아랫눈꺼풀은 화면에서 제자리). 옆으로 옮겨 온 원본 열(sx)로 재면
+        //   홍채 뒤쪽(늘어나는 쪽)은 눈꼬리 쪽 낮은 선을 써서 넓은 쐐기가 칠해졌음. 위아래로 실제로 옮긴 픽셀만(눈 밖 1px 줄 방지)
+        const bs = cy + lowB(x) - mg;
+        if (dy < 0 && wl > 0 && sy - y > 0.3 && sy > bs && sy > cy) {
+          // 위를 볼 때 원래 아랫눈꺼풀 뒤였던 곳이 드러남
+          if ((sx - cx) ** 2 + (sy - cy) ** 2 < RI2) {            // 홍채 아랫부분: 같은 반지름에서 각도를 수평 쪽으로 돌려 보이는 곳 무늬(홍채 결은 방사상)
+            const u = sx - cx, v = sy - cy, rho = Math.min(Math.hypot(u, v), 1.02 * rI), th0 = Math.atan2(v, u);
+            const tgt = Math.abs(th0) < Math.PI / 2 ? 0 : Math.PI, stp = (tgt - th0) / 16;
+            let qx = sx, qy = sy, ok = false;
+            for (let q = 1; q <= 16; q++) { const th = th0 + stp * q; qx = cx + Math.cos(th) * rho; qy = cy + Math.sin(th) * rho; if (qy < cy + lowB(qx) - mg) { ok = true; break; } }
+            if (ok) { samp(src, w, clamp(qx, 0, w - 1.001), clamp(qy, 0, h - 1.001), o, 4); continue; }
+          }
+          // 흰자: 그 열의 아랫눈꺼풀 선 조금 위 흰자 색을 아래로 이어 씀(흰자 배경판 = 홍채를 지운 판). 무늬를 접어 오면 네모 얼룩이 생겨서
+          const { plate, pX0, pY0, pW, pH } = e;
+          const ry = Math.max(cy, cy + Math.min(lowB(x), lowB(sx)) - mg - mf);   // 원본 열(sx)에서도 아랫눈꺼풀 위(흰자)인 줄
+          samp(plate, pW, clamp(sx - pX0, 0, pW - 1.001), clamp(ry - pY0, 0, pH - 1.001), o, 3);
+          continue;
+        }
+        samp(src, w, sx, sy, o, 4);
       }
     }
     P.cur.getContext('2d').putImageData(e.wimg, x0, y0);
@@ -982,9 +1037,11 @@
     g.fillStyle = bg; g.fillRect(-200, -200, W + 400, H + 400);
     g.drawImage(P.soft, P.ox, P.oy, P.w * k, P.h * k);      // 가장자리가 녹은 사진(render() 가 zp 만큼 확대)
     const off = {};
-    for (const s of ['R', 'L']) {                            // 시선: 홍채 이동량(사진 px). 좌우 ±0.85r, 위아래 ±0.5r 까지
+    for (const s of ['R', 'L']) {                            // 시선: 홍채 이동량(사진 px). 좌우 ±0.85r, 위 0.22r·아래 0.4r 까지
       const e = P.eyes[s], gz = this.eyeGaze(s);
-      const dx = clamp(gz.x * 0.8, -0.85, 0.85) * e.r, dy = clamp(gz.y * 0.45, -0.5, 0.5) * e.r, f = 1 - 0.12 * Math.min(1, Math.abs(gz.x));
+      // 위로는 0.22r 까지만: 아랫눈꺼풀이 안 따라가서 홍채 아래로 원래 가려 있던 곳이 드러나는데, 그 부분은 사진에 없어 메워야 하므로 작게
+      // 아래로는 0.4r(홍채가 아랫눈꺼풀 뒤로 들어가고 윗눈꺼풀이 따라옴 — 메울 곳 없음)
+      const dx = clamp(gz.x * 0.8, -0.85, 0.85) * e.r, dy = (gz.y < 0 ? clamp(gz.y * 0.25, -0.22, 0) : clamp(gz.y * 0.4, 0, 0.4)) * e.r, f = 1 - 0.12 * Math.min(1, Math.abs(gz.x));
       if (Math.abs(dx) > 0.15 || Math.abs(dy) > 0.15 || e.wkey) {
         warpEye(P, e, dx, dy, f);
         if (Math.abs(dx) <= 0.15 && Math.abs(dy) <= 0.15) e.wkey = null;   // 정면으로 돌아옴(원본과 같음): 다음부터 워프 안 함
@@ -1014,7 +1071,11 @@
       tg.fillStyle = `rgba(255,255,255,${0.55 + lit * 0.45})`;
       tg.beginPath(); tg.ellipse(n - e.r * 0.22, n - e.r * 0.28, e.r * (0.07 + lit * 0.06), e.r * (0.055 + lit * 0.05), -0.4, 0, 7); tg.fill();
       tg.globalCompositeOperation = 'destination-in'; tg.drawImage(e.mask, 0, 0);
+      g.save(); g.beginPath();                    // 아래를 볼 때 홍채가 아랫눈꺼풀 뒤로 들어가면 동공·반사도 가려지게(아랫눈꺼풀 선 위만)
+      for (let q = -2.6; q <= 2.61; q += 0.1) { const xq = e.cx + q * e.r; g.lineTo(P.ox + xq * k, P.oy + (e.cy + e.lowB(xq)) * k); }
+      g.lineTo(P.ox + (e.cx + 2.6 * e.r) * k, P.oy + (e.cy - 3 * e.r) * k); g.lineTo(P.ox + (e.cx - 2.6 * e.r) * k, P.oy + (e.cy - 3 * e.r) * k); g.closePath(); g.clip();
       g.drawImage(t, X - n * k * of, Y - n * k, t.width * k * of, t.height * k);   // 홍채와 함께 옮기고, 옆을 보면 좁게
+      g.restore();
       // 깜빡임·눈부심 찡그림: 윗눈꺼풀 피부를 아래로 늘여 덮음(피부 진찰실과 같은 방법)
       const bl = d.blink > 0 ? Math.sin(d.blink * Math.PI) : 0;
       let c = 1 - (1 - bl * 0.97) * (1 - 0.5 * d.squint[s]);
