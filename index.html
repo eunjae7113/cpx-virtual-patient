@@ -5434,8 +5434,8 @@ body:not(.student) .s-only { display: none !important }
   // 소견 사진은 중등도에서만(사진은 강도 조절이 안 됨). 정상 사진은 강도와 상관없이 쓰고, 흰자 충혈·황달은 엔진이 칠함(paint)
   // → 소견 사진이 없는 외형(미성년자: ChatGPT가 막음)·경증·중증도 실사로. 좌우 반전이면 사진도 뒤집음
   let usePhotoEye = true;
-  // 사진 위에 칠할 수 없는 멈춘 소견(눈꺼풀·각막·분비물 등)이 있으면 정상 사진을 못 씀 → 코드 그림 (결막 창백은 눈꺼풀을 뒤집을 때만 보이고 그때는 코드 그림)
-  const UNPAINTABLE = ['petechiae', 'discharge', 'tearing', 'haze', 'infiltrate', 'hypopyon', 'limbalIschemia', 'arcus', 'ptosis', 'retraction', 'lidEdema', 'lidRed', 'bleph', 'xanth', 'proptosis', 'stye'];
+  // 사진 위에 칠할 수 없는 멈춘 소견(눈꺼풀·각막·분비물 등)이 있으면 정상 사진을 못 씀 → 코드 그림 (결막 창백·검결막 점상출혈은 아래 눈꺼풀을 당길 때 사진 위에 엔진이 칠함)
+  const UNPAINTABLE = ['discharge', 'tearing', 'haze', 'infiltrate', 'hypopyon', 'limbalIschemia', 'arcus', 'ptosis', 'retraction', 'lidEdema', 'lidRed', 'bleph', 'xanth', 'proptosis', 'stye'];
   const paintable = (st) => ['R', 'L'].every(s => UNPAINTABLE.every(k => !st[s][k]));
   function applyPhoto() {
     const av = $('avSel').value, A = (B.eye_photos || {})[av] || {}, M = (B.eye_marks || {})[av] || {};

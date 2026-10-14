@@ -1027,9 +1027,67 @@
     P.cur.getContext('2d').putImageData(e.wimg, x0, y0);
     e.wr = [x0, y0, rw, rh];
   }
-  // 지금 사진으로 그려도 되는지: 눈꺼풀 뒤집기·Dix-Hallpike(회전 안진)가 아닐 때. 시선 이동은 워프로 사진에서 그림
+  // 지금 사진으로 그려도 되는지: Dix-Hallpike(회전 안진)가 아닐 때. 시선 이동은 워프로, 아래 눈꺼풀 당기기는 drawPhotoEvert 로 사진에서 그림
   EyeEngine.prototype.usePhoto = function () {
-    const d = this.dyn; return !!this.photoPrep && d.mode === 'eyes' && d.evert < 0.05 && !d.dix;
+    const d = this.dyn; return !!this.photoPrep && d.mode === 'eyes' && !d.dix;
+  };
+  // 사진에서 아래 눈꺼풀 당기기: 아랫눈꺼풀 선(lowB) 아래 피부를 아래로 끌어내리고(볼 쪽은 제자리라 눌려 모임),
+  // 벌어진 틈에 아래 흰자 → 원개부 그늘 → 검결막(정상 붉음 / 빈혈 창백 / 충혈 더 붉음, 혈관결·점상출혈) → 눈꺼풀 가장자리·속눈썹을 칠함
+  // 색 규칙은 코드 그림(drawEye 의 검결막 띠)과 같음
+  EyeEngine.prototype.drawPhotoEvert = function (g) {
+    const P = this.photoPrep, d = this.dyn, k = P.k;
+    for (const s of ['R', 'L']) {
+      const e = P.eyes[s], S = this.S[s], r = e.r, Dm = d.evert * 0.85 * r, RW = 1.95 * r;
+      const prof = (x) => Math.max(0, 1 - ((x - e.cx) / (1.7 * r)) ** 2) ** 1.7;     // 눈꼬리 쪽은 빨리 줄어 틈이 눈 밖으로 안 뻗음
+      const top = (x) => e.cy + e.lowB(x), D = (x) => Dm * prof(x), H2 = 2.6 * r, st = 1.5;
+      const X = (x) => P.ox + x * k, Y = (y) => P.oy + y * k;
+      // 1) 아랫눈꺼풀·눈 밑 피부를 열마다 아래로 (아래 끝 top+H2 는 제자리)
+      for (let x = e.cx - RW; x < e.cx + RW; x += st) {
+        const yl = top(x), dd = D(x); if (dd < 0.3) continue;
+        g.drawImage(P.cur, x, yl, st, H2, X(x), Y(yl + dd), st * k + 0.5, (H2 - dd) * k);
+      }
+      // 2) 벌어진 틈: 세로 색 띠(위 = 사진 흰자 색 → 원개부 그늘 → 검결막 → 가장자리)를 열마다 그 열의 틈 높이로 늘여 붙임
+      let pc = mix([206, 72, 80], [236, 205, 196], S.pallor || 0);
+      pc = mix(pc, [190, 38, 48], (S.injection || 0) * 0.45);
+      pc = mix(pc, [214, 128, 122], 0.22);                    // 사진 위에서는 코드 그림보다 조금 차분하게(실제 점막 색)
+      const px = P.px, sam = [];     // 사진 속 흰자 색: 홍채 옆에서 가장 밝은 곳들(눈꺼풀 그늘을 피함)
+      for (const sx of [-1.45, -1.3, -1.15, 1.15, 1.3, 1.45]) for (const sy of [-0.1, 0, 0.1]) { const i = ((Math.round(e.cy + sy * r) * P.w + Math.round(e.cx + sx * r)) * 4); sam.push([px[i], px[i + 1], px[i + 2]]); }
+      sam.sort((c1, c2) => (c2[0] + c2[1] + c2[2]) - (c1[0] + c1[1] + c1[2]));
+      const scl = sam.slice(0, 4).reduce((q, c) => [q[0] + c[0] / 4, q[1] + c[1] / 4, q[2] + c[2] / 4], [0, 0, 0]);
+      const key = pc.map(Math.round).join() + '|' + scl.map(Math.round).join();
+      if (e.evKey !== key) {
+        e.evKey = key; e.evStrip = e.evStrip || document.createElement('canvas'); e.evStrip.width = 1; e.evStrip.height = 128;
+        const sg = e.evStrip.getContext('2d'), gr = sg.createLinearGradient(0, 0, 0, 128);
+        gr.addColorStop(0, rgb(scl)); gr.addColorStop(0.14, rgb(mix(scl, pc, 0.35))); gr.addColorStop(0.3, rgb(mix(pc, [110, 28, 38], 0.4)));
+        gr.addColorStop(0.48, rgb(pc)); gr.addColorStop(0.86, rgb(mix(pc, [235, 160, 150], 0.2))); gr.addColorStop(1, rgb(mix(pc, [190, 130, 112], 0.45)));
+        sg.fillStyle = gr; sg.fillRect(0, 0, 1, 128);
+      }
+      for (let x = e.cx - RW; x < e.cx + RW; x += st) { const dd = D(x); if (dd < 0.3) continue; g.drawImage(e.evStrip, X(x), Y(top(x)) - 0.5, st * k + 0.5, dd * k + 1); }
+      // 젖은 점막 광택
+      g.save(); g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = Math.max(1, 0.07 * r * k); g.lineCap = 'round'; g.beginPath();
+      for (let x = e.cx - RW * 0.6; x <= e.cx + RW * 0.6; x += 2) g.lineTo(X(x - 0.1 * r), Y(top(x) + D(x) * 0.62)); g.stroke(); g.restore();
+      // 혈관결(세로로 가늘게)·점상출혈 — 틈 안에서 그 열의 높이 비율로
+      const rr = rng(s === 'R' ? 77 : 88);
+      g.strokeStyle = rgb(mix(pc, [150, 30, 40], 0.45), 0.4); g.lineWidth = 0.7;
+      for (let i = 0; i < 34; i++) {
+        const x = e.cx + (rr() * 2 - 1) * RW * 0.75, a = top(x) + D(x) * (0.4 + rr() * 0.1), b = top(x) + D(x) * (0.82 + rr() * 0.1);
+        g.beginPath(); g.moveTo(X(x), Y(a)); g.quadraticCurveTo(X(x + (rr() - 0.5) * r * 0.25), Y((a + b) / 2), X(x + (rr() - 0.5) * r * 0.2), Y(b)); g.stroke();
+      }
+      if (S.petechiae) {
+        g.fillStyle = 'rgba(150,10,20,0.9)';
+        for (let i = 0; i < 18 * S.petechiae; i++) { const x = e.cx + (rr() * 2 - 1) * RW * 0.7, y = top(x) + D(x) * (0.45 + rr() * 0.45); g.beginPath(); g.arc(X(x), Y(y), (0.035 + rr() * 0.035) * r * k, 0, 7); g.fill(); }
+      }
+      // 3) 눈꺼풀 가장자리(살짝 어두운 테)와 아래 속눈썹
+      g.save(); g.lineCap = 'round';
+      g.strokeStyle = 'rgba(150,80,70,0.35)'; g.lineWidth = Math.max(1, 0.05 * r * k);
+      g.beginPath(); for (let x = e.cx - RW; x <= e.cx + RW; x += 2) g.lineTo(X(x), Y(top(x) + D(x))); g.stroke();
+      g.strokeStyle = 'rgba(40,28,22,0.45)'; g.lineWidth = Math.max(0.7, 0.022 * r * k);
+      for (let x = e.cx - RW * 0.8; x <= e.cx + RW * 0.8; x += r * 0.13) {
+        const y = top(x) + D(x), lx = (rr() - 0.5) * 0.08 * r + (x - e.cx) * 0.05;
+        g.beginPath(); g.moveTo(X(x), Y(y + 0.04 * r)); g.lineTo(X(x + lx), Y(y + (0.18 + rr() * 0.1) * r * prof(x))); g.stroke();
+      }
+      g.restore();
+    }
   };
   EyeEngine.prototype.drawPhotoEyes = function (g) {
     const P = this.photoPrep, d = this.dyn, k = P.k;
@@ -1094,6 +1152,7 @@
         g.beginPath(); edge.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); g.restore();
       }
     }
+    if (d.evert > 0.02) this.drawPhotoEvert(g);
   };
 
   // ---------------------------------------------------------- 프레임 렌더
