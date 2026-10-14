@@ -71,6 +71,7 @@
     speed: 1, stride: 1, cadence: 1, base: 0.07, trunkFwd: 0, armSwing: 1, elbow: 12, headDown: 0,
     var: 0, sway: 0, waddle: 0, shuffle: 0, festinate: 0, stamp: 0, chorea: 0, scissor: 0, lordosis: 0, unable: null, assist: 0,
     tandem: 0, pTrem: 0,      // tandem 일자 보행 때 헛디딤(1이면 몇 걸음 못 감), pTrem 팔 뻗은 자세 떨림(본태떨림)
+    lean: 0,                  // 걸을 때 몸이 한쪽으로 기울고 쏠림 (음수 = 환자 오른쪽)
     R: {}, L: {},
     rom: { open: 0.4, closed: 0.6, dir: 0, fall: 0, wide: 0 },
   };
@@ -245,8 +246,8 @@
     const trunkLat = side * (p.waddle * 10 + (p.R.hipDrop + p.L.hipDrop) * 7) + cn(2, 1.6) * 9 + (p.var ? Math.sin(t * 1.3 + 1) * p.var * (tan ? 10 : 6) : 0)
       + (tan ? Math.sin(t * 2.6) * p.tandem * 4 * clamp(1 - (this.t - this.tStep) / 1.5, 0.3, 1) : 0);
     const trunkFwd = p.trunkFwd * 32 + (A.old || 0) * 6 - p.lordosis * 9 + cn(3, 1.4) * 6 + (p.var ? Math.sin(t * 2.1) * p.var * 4 : 0);
-    out.pelvis = { x: this.dist, y: pelY, z: swayZ, tilt: drop + hike };
-    out.trunk = { fwd: trunkFwd, lat: trunkLat, head: p.headDown * 25 + (A.old || 0) * 6 + cn(4, 2.5) * 10, headLat: cn(5, 1.8) * 12 };
+    out.pelvis = { x: this.dist, y: pelY, z: swayZ + p.lean * 0.04 * Hh / 1.7, tilt: drop + hike };
+    out.trunk = { fwd: trunkFwd, lat: trunkLat + p.lean * 8, head: p.headDown * 25 + (A.old || 0) * 6 + cn(4, 2.5) * 10, headLat: cn(5, 1.8) * 12 };
     out.chains = chains;
     // 팔: 반대쪽 다리와 함께 흔듦
     for (const s of ['R', 'L']) {
