@@ -571,7 +571,14 @@
     if (this.task === 'babinski') { this.drawFoot(g); return; }
     this.drawRoom(g);
     this.drawPrints(g);
-    this.drawBody(g, this.pose);
+    // 3D 환자(실사 모델): 걷기·서기 검사에서 켜져 있으면 2D 마네킹 대신. 그림자는 2D 로
+    const g3 = this.use3D !== false && this.g3 && this.g3.ready && !CLOSE[this.task] && this.pose;
+    if (g3) {
+      const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, sh = this.project(pv.x, 0, pv.z), Hh = this.pose.H;
+      g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill();
+      const cv = this.g3.render(J, this.view, Hh, AV[this.av].hair);
+      if (cv) g.drawImage(cv, 0, 0, W, H);
+    } else this.drawBody(g, this.pose);
     if (this.hud) {
       g.font = '600 15px "IBM Plex Sans KR", sans-serif'; const w = g.measureText(this.hud).width + 24;
       g.fillStyle = 'rgba(15,20,22,0.78)'; g.beginPath(); g.roundRect(14, 14, w, 32, 8); g.fill();
@@ -671,7 +678,8 @@
   };
 
   // 몸 그리기: 관절 위치를 세계 좌표로 바꿔 투영하고, 먼 쪽부터
-  P.drawBody = function (g, o) {
+  // jointsOnly: 그리지 않고 관절 위치만 돌려줌(3D 환자 gait-3d.js 가 씀). x 는 골반 기준(+pv.x 해야 세계 좌표)
+  P.drawBody = function (g, o, jointsOnly) {
     if (!o) return;
     const A = AV[this.av], Hh = o.H, L = o.L, pv = o.pelvis, side = this.view === 'side';
     const skin = A.skin, sk = (k) => `rgb(${skin[0] * k | 0},${skin[1] * k | 0},${skin[2] * k | 0})`;
@@ -716,6 +724,10 @@
       return { S: S0, E, Wr, Hn: [Wr[0] + fd[0] / n * HD, Wr[1] + fd[1] / n * HD, Wr[2] + fd[2] / n * HD] };
     };
     const arms = { R: arm('R'), L: arm('L') };
+    if (jointsOnly) {
+      let floor = Infinity; for (const s of ['R', 'L']) floor = Math.min(floor, legs[s].heel[1], legs[s].toe[1]);
+      return { legs, arms, shC, neckTop, headC, pv, L, floor };
+    }
     const PJ = (p3) => W3(p3[0], p3[1], p3[2]);
     const cap = (a, b, w, col, outline) => {   // 둥근 막대(팔다리)
       const A2 = PJ(a), B2 = PJ(b), sc = (A2[2] + B2[2]) / 2;
