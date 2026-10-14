@@ -345,7 +345,9 @@ body:not(.student) .s-only { display: none !important }
   const P = G.presets, BY = Object.fromEntries(G.cases.map(c => [c.id, c]));
   const eng = new GaitEngine($('gaitCv'));
   let C = null, item = 'item_062', on = false, paused = false, last = 0, slow = false;
-  const revealed = {};
+  const revealed = {}, gNotes = {};           // 학생 관찰 메모(케이스:항목 → 글), 브라우저에 저장
+  try { Object.assign(gNotes, JSON.parse(localStorage.getItem('gaitNotes') || '{}')); } catch (e) { }
+  const saveG = () => { try { localStorage.setItem('gaitNotes', JSON.stringify(gNotes)); } catch (e) { } };
   const isStudent = () => document.body.classList.contains('student');
   const abn = (id) => !!BY[id] && Object.values(BY[id].ex).some(v => v[0]);
   const TASK = Object.fromEntries(G.items.map(i => [i.id, i.task]));
@@ -376,7 +378,11 @@ body:not(.student) .s-only { display: none !important }
     const answer = `<div class="answer"><b>정답 소견 (초안 · 검수 필요)</b><div class="txt">${esc(finding)}</div>` +
       `<b>보행 상태</b><div>${esc(e && e[0] && e[2] === 'preset' ? (String(e[1]).startsWith('rx:') ? G.reflex[e[1].slice(3)].name : pre.name) : '정상')}</div><b>원자료 문장 (채점 기준)</b><div>${esc((e && e[4]) || '-')}</div></div>`;
     $('gFinding').innerHTML = `<div class="head"><h3>${esc(G.items.find(i => i.id === iid).name)}</h3></div><dl class="kv" id="gMeasure"></dl>` +
-      (!isStudent() || revealed[key] ? answer : '<div class="btnrow" style="margin:0"><button class="btn" id="gReveal" type="button">정답 확인</button></div>');
+      (isStudent() ? `<div class="obs"><label for="gObs" class="note" style="margin:0">화면을 보고 관찰한 소견을 적으세요(좌우·크기·리듬). 정상이면 "정상"이라고 적습니다.</label>
+        <textarea id="gObs" placeholder="예: 어느 쪽이 · 어떻게 · 얼마나 (보폭, 발 간격, 흔들림, 반사 크기, 좌우 차이)">${esc(gNotes[key] || '')}</textarea>
+        ${revealed[key] ? '' : '<div class="btnrow" style="margin:0"><button class="btn" id="gReveal" type="button">정답 확인</button></div>'}</div>` : '') +
+      (!isStudent() || revealed[key] ? answer : '');
+    if ($('gObs')) $('gObs').addEventListener('input', (ev) => { gNotes[key] = ev.target.value; saveG(); });
     if ($('gReveal')) $('gReveal').addEventListener('click', () => { revealed[key] = true; run(item); });
     measureTick(true);
     eng.draw();
