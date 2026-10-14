@@ -5,6 +5,7 @@
  * 검사: walk 걸음걸이 / heel 발뒤꿈치 보행 / toe 발끝 보행 / romberg (발 모으고 눈 뜨고 → 눈 감고) / tandem 일자 보행
  *       앉아서 하는 협조운동(가까이 비스듬히 봄): fnt finger to nose / hts heel to shin / ram 빠른 교대운동 / drift pronator drift
  *       앉아서 하는 반사: dtr_arm 이두근·상완요골근 / dtr_leg 무릎·발목 반사 / clonus 발목 간대 (반사망치·검사자 손)
+ *       babinski 바빈스키(족저반사): 누운 환자의 발 확대 그림 — 옆 = 발 안쪽 옆모습(엄지 위·아래), 앞 = 발바닥(긁는 길·발가락 벌어짐)
  * 파라미터는 tools/gait_presets.py 의 프리셋(g). 모든 값 0이면 정상.
  */
 (function () {
@@ -74,7 +75,7 @@
     tandem: 0, pTrem: 0,      // tandem 일자 보행 때 헛디딤(1이면 몇 걸음 못 감), pTrem 팔 뻗은 자세 떨림(본태떨림)
     lean: 0,                  // 걸을 때 몸이 한쪽으로 기울고 쏠림 (음수 = 환자 오른쪽)
     // 반사(강도로 섞지 않음): dtr 등급 0~4 {R:{bi,br,kn,an}, L:{…}, all:{…}}, clonus 발목 간대 박동 수 {R, L}(8 이상 = 지속), relax 이완 지연(갑상선기능저하)
-    dtr: null, clonus: null, relax: 0,
+    dtr: null, clonus: null, relax: 0, plantar: null,   // plantar 족저반사 {R, L}: -1 굽힘(정상) / 0 무반응 / +1 신전(바빈스키 양성)
     R: {}, L: {},
     rom: { open: 0.4, closed: 0.6, dir: 0, fall: 0, wide: 0 },
   };
@@ -105,7 +106,7 @@
   GaitEngine.VIEWS = { side: '옆에서', front: '앞에서' };
   GaitEngine.TASKS = { walk: '걸음걸이', heel: '발뒤꿈치 보행', toe: '발끝 보행', romberg: 'Romberg', tandem: '일자 보행',
     fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift',
-    dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus' };
+    dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus', babinski: '바빈스키' };
   GaitEngine.CLOSE = CLOSE;
   const P = GaitEngine.prototype;
 
@@ -131,6 +132,7 @@
     const rd = this.raw.dtr || {}, base = Object.assign({ bi: 2, br: 2, kn: 2, an: 2 }, rd.all || {});
     o.dtr = { R: Object.assign({}, base, rd.R || {}), L: Object.assign({}, base, rd.L || {}) };
     o.clonus = Object.assign({ R: 0, L: 0 }, this.raw.clonus || {}); o.relax = this.raw.relax || 0;
+    o.plantar = Object.assign({ R: -1, L: -1 }, this.raw.plantar || {});
     this.p = o;
   };
 
@@ -151,6 +153,7 @@
   P.advance = function (dt) {
     this.t += dt;
     const p = this.p;
+    if (this.task === 'babinski') return;                // 발 확대 그림: 시간만 흐름
     if (this.task === 'romberg' || CLOSE[this.task] || p.unable) { this.pose = this.solve(dt); return; }
     // 주기 속도: 기본 1.05초/주기. 아픈 쪽 디딤(입박)이 짧으면 그동안 빨리 지나감(절뚝임)
     let T = 1.05 / p.cadence * (AV[this.av].child ? 0.85 : 1) * (this.task === 'walk' ? 1 : this.task === 'tandem' ? 1.6 : 1.15);
@@ -171,6 +174,7 @@
 
   // ------------------------------------------------------------------ 자세 계산 (미터, 몸 기준)
   P.solve = function (dt) {
+    if (this.task === 'babinski') return null;
     const p = this.p, A = AV[this.av], Hh = A.h, ch = A.child ? 1 : 0;
     const L = { th: 0.245 * Hh, sh: 0.246 * Hh, ank: 0.039 * Hh, heel: 0.045 * Hh, toe: 0.11 * Hh, hipW: 0.085 * Hh * (ch ? 0.9 : 1) };
     const out = { legs: {}, H: Hh, L };
@@ -461,6 +465,73 @@
   };
 
   // ------------------------------------------------------------------ 그리기
+  // ------------------------------------------------------------------ 바빈스키(족저반사): 누운 환자의 발 확대
+  // 오른발 → 왼발 4.5초씩. 0.6~2.2초 긁기(뒤꿈치 → 발바닥 바깥쪽 → 앞꿈치를 가로질러 엄지 쪽), 1.3초부터 반응
+  // 반응 plantar: -1 발가락이 아래로 굽음 / 0 무반응 / +1 엄지가 위로 젖혀지고(신전) 나머지 발가락이 부채꼴로 벌어짐
+  P.drawFoot = function (g) {
+    const t = this.t, per = 4.5, s = Math.floor(t / per) % 2 ? 'L' : 'R', u = t % per, pv = this.p.plantar[s];
+    const A = AV[this.av], sk = (k) => `rgb(${A.skin[0] * k | 0},${A.skin[1] * k | 0},${A.skin[2] * k | 0})`, sole = (k) => `rgb(${Math.min(255, A.skin[0] * k * 1.04) | 0},${A.skin[1] * k * 0.97 | 0},${A.skin[2] * k * 0.9 | 0})`;
+    const sv = clamp((u - 0.6) / 1.6, 0, 1), resp = ease(clamp((u - 1.3) / 0.6, 0, 1)) * (1 - ease(clamp((u - 2.9) / 0.7, 0, 1)));
+    const big = resp * (pv > 0 ? 38 * pv : 20 * pv), small = resp * (pv > 0 ? 6 : 16 * pv), fan = resp * Math.max(0, pv) * 9;   // 도
+    this.hud = `${s === 'R' ? '오른' : '왼'}발 바닥 바깥쪽을 뒤꿈치 → 새끼발가락 쪽 → 엄지 쪽으로 긁기`;
+    // 침대 시트
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#e9eef0'); bg.addColorStop(1, '#d4dde0'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const cap = (x1, y1, x2, y2, w, col) => { g.lineCap = 'round'; g.strokeStyle = 'rgba(40,28,22,0.35)'; g.lineWidth = w + 2; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+    const toe = (bx, by, ang, len, w, col) => { const a = ang * D2R, ex = bx + Math.cos(a) * len, ey = by + Math.sin(a) * len; cap(bx, by, ex, ey, w, col); return [ex, ey]; };
+    let tip;
+    if (this.view === 'side') {
+      // 옆모습(발 안쪽): 다리는 왼쪽(머리 쪽)으로 누워 있고 발은 세워져 발바닥이 오른쪽(검사자 쪽). 엄지가 위
+      g.fillStyle = 'rgba(60,50,40,0.12)'; g.beginPath(); g.ellipse(560, 500, 380, 26, 0, 0, 7); g.fill();
+      g.fillStyle = sk(0.98); g.strokeStyle = 'rgba(40,28,22,0.4)'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(0, 318); g.bezierCurveTo(300, 322, 560, 318, 655, 300);            // 정강이 위
+      g.bezierCurveTo(700, 285, 735, 252, 772, 228);                                                  // 발등
+      g.lineTo(800, 246); g.bezierCurveTo(806, 300, 796, 380, 784, 430);                               // 앞꿈치·발바닥
+      g.bezierCurveTo(776, 470, 748, 486, 712, 480); g.bezierCurveTo(690, 476, 660, 452, 600, 440);    // 뒤꿈치
+      g.bezierCurveTo(420, 430, 200, 420, 0, 418); g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(150,110,90,0.35)'; g.lineWidth = 3; g.beginPath(); g.moveTo(790, 262); g.bezierCurveTo(797, 320, 790, 390, 778, 440); g.stroke();   // 발바닥 쪽 그늘
+      // 나머지 발가락(뒤쪽, 흐리게) → 엄지(앞)
+      // 화면 각도: -90 = 위. 신전(+) = 발등(왼쪽·정강이) 쪽으로 젖혀짐 → 각도를 빼고, 굽힘(-) = 발바닥(오른쪽) 쪽
+      for (let i = 0; i < 3; i++) toe(770 - i * 10, 238 + i * 7, -80 - small - fan * (i + 1) * 0.3, 32 - i * 4, 16 - i * 2, sk(0.84));
+      tip = toe(786, 238, -84 - big, 62, 32, sk(1));
+      g.fillStyle = 'rgba(255,240,235,0.85)'; g.beginPath(); const na = (-84 - big) * D2R;          // 발톱(엄지 등쪽 = 왼쪽)
+      g.ellipse(tip[0] - Math.cos(na) * 14 + Math.sin(na) * 7, tip[1] - Math.sin(na) * 14 - Math.cos(na) * 7, 9, 5, na, 0, 7); g.fill();
+      // 긁는 도구(반사망치 손잡이 끝): 뒤꿈치 → 발바닥 바깥쪽 → 앞꿈치
+      const P3 = [[776, 462], [793, 380], [800, 300], [797, 256]], q = sv * 3, i0 = Math.min(2, Math.floor(q)), f = q - i0;
+      const hx = lerp(P3[i0][0], P3[i0 + 1][0], f) + 6, hy = lerp(P3[i0][1], P3[i0 + 1][1], f);
+      if (u > 0.4 && u < 2.6) { cap(hx + 150, hy + 70, hx + 4, hy, 7, '#9aa3a8'); cap(hx + 150, hy + 70, hx + 210, hy + 98, 26, '#e2b996'); }
+      if (sv > 0) { g.strokeStyle = 'rgba(200,60,60,0.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(P3[0][0] + 3, P3[0][1]); for (let k = 1; k <= i0; k++) g.lineTo(P3[k][0] + 3, P3[k][1]); g.lineTo(hx - 3, hy); g.stroke(); }
+    } else {
+      // 발바닥(검사자 쪽에서): 발가락이 위. 오른발은 엄지가 화면 오른쪽(몸 가운데 쪽)
+      const m = s === 'R' ? 1 : -1, cx = 600, X = (x) => cx + m * x;
+      g.fillStyle = sole(1); g.strokeStyle = 'rgba(40,28,22,0.4)'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(X(-10), 545);
+      g.bezierCurveTo(X(-95), 545, X(-105), 420, X(-90), 330); g.bezierCurveTo(X(-80), 260, X(-110), 200, X(-95), 160);   // 바깥쪽 가장자리
+      g.bezierCurveTo(X(-60), 120, X(80), 100, X(105), 150); g.bezierCurveTo(X(120), 220, X(60), 290, X(55), 360);        // 앞꿈치 → 안쪽(아치)
+      g.bezierCurveTo(X(50), 440, X(85), 545, X(-10), 545); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = 'rgba(190,140,110,0.25)'; g.beginPath(); g.ellipse(X(-15), 470, 70, 60, 0, 0, 7); g.fill();          // 뒤꿈치·앞꿈치 굳은살
+      g.beginPath(); g.ellipse(X(5), 175, 95, 40, 0, 0, 7); g.fill();
+      // 발가락: 새끼(바깥) → 엄지(안쪽). 굽으면 짧아 보이고, 엄지 신전은 위로 젖혀져 짧아 보이며, 부채꼴로 벌어짐
+      const TO = [[-82, 150, 16, 26], [-50, 128, 18, 30], [-15, 116, 19, 33], [22, 110, 21, 36], [72, 112, 34, 46]];
+      TO.forEach(([x, y, w, len], i) => {
+        const isBig = i === 4, a = isBig ? big : small, spread = (i - 2) * fan * 0.9 * m, foreshort = 1 - Math.abs(a) / 70;
+        const ang = -90 + (x * 0.12) * m + spread;
+        const e = toe(X(x), y, ang, len * foreshort, w, isBig && a > 0 ? sole(0.97) : sole(1 - Math.max(0, -a) / 120));
+        if (a < -3) { g.fillStyle = 'rgba(150,100,80,0.25)'; g.beginPath(); g.arc(e[0], e[1], w * 0.35, 0, 7); g.fill(); }   // 굽어 발가락 끝 그늘
+      });
+      // 긁는 길: 뒤꿈치 → 바깥쪽 가장자리 → 앞꿈치를 가로질러 엄지 밑까지
+      const PS = [[-20, 500], [-70, 400], [-70, 290], [-60, 205], [0, 182], [50, 180]], q = sv * (PS.length - 1), i0 = Math.min(PS.length - 2, Math.floor(q)), f = q - i0;
+      const hx = X(lerp(PS[i0][0], PS[i0 + 1][0], f)), hy = lerp(PS[i0][1], PS[i0 + 1][1], f);
+      if (sv > 0) { g.strokeStyle = 'rgba(200,60,60,0.45)'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(X(PS[0][0]), PS[0][1]); for (let k = 1; k <= i0; k++) g.lineTo(X(PS[k][0]), PS[k][1]); g.lineTo(hx, hy); g.stroke(); }
+      if (u > 0.4 && u < 2.6) { cap(hx - m * 120, hy + 160, hx, hy, 7, '#9aa3a8'); cap(hx - m * 120, hy + 160, hx - m * 160, hy + 215, 26, '#e2b996'); }
+    }
+    // 글자
+    g.font = '600 15px "IBM Plex Sans KR", sans-serif'; const w = g.measureText(this.hud).width + 24;
+    g.fillStyle = 'rgba(15,20,22,0.78)'; g.beginPath(); g.roundRect(14, 14, w, 32, 8); g.fill();
+    g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(this.hud, 26, 30);
+    g.font = '12px "IBM Plex Sans KR", sans-serif'; g.textBaseline = 'alphabetic'; g.fillStyle = 'rgba(40,50,55,0.75)'; g.textAlign = 'right';
+    g.fillText(this.view === 'side' ? '누운 환자의 발 · 안쪽 옆에서 (발바닥이 오른쪽)' : '누운 환자의 발바닥 · 발치에서', W - 14, 22);
+  };
+
   P.seatH = function () { return (0.285 + (HANG[this.task] ? 0.07 : 0)) * AV[this.av].h; };   // 진찰대 높이(엉덩관절)
   // 가까이 보는 검사의 카메라: 옆에서 = 오른쪽 앞 비스듬히(38°), 앞에서 = 정면
   P.camPhi = function () { return (this.view === 'side' ? 38 : 90) * D2R; };
@@ -497,6 +568,7 @@
   P.draw = function () {
     const g = this.g, dpr = this.c.width / W;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.task === 'babinski') { this.drawFoot(g); return; }
     this.drawRoom(g);
     this.drawPrints(g);
     this.drawBody(g, this.pose);
@@ -788,7 +860,7 @@
 
   // 화면에 적을 관찰값(학생에게도 보이는 객관적 측정): 분당 걸음 수, 평균 보폭, 발 간격
   P.measure = function () {
-    if (this.task === 'romberg' || CLOSE[this.task] || this.p.unable) return null;
+    if (this.task === 'romberg' || this.task === 'babinski' || CLOSE[this.task] || this.p.unable) return null;
     const pr = this.prints, st = this.stepTimes;
     if (pr.length < 4 || st.length < 4) return null;
     const cad = 60 * (st.length - 1) / (st[st.length - 1] - st[0]);
