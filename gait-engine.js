@@ -489,7 +489,7 @@
       const S = 225;                                   // 1 m = 225 px (아이는 실제 키대로 작게)
       return [70 + x * S, 505 - y * S - z * S * 0.2, S];
     }
-    const F = 760, d = Math.max(1.2, 7.0 - x), CAMH = Hh * 0.62;           // 7 m 앞에서 출발해 다가옴
+    const F = 760, d = Math.max(1.2, 7.0 - x), CAMH = 1.07; void Hh;       // 7 m 앞에서 출발해 다가옴. 카메라 높이 고정(실사 배경 원근과 맞춤)
     const sc = F / d;
     return [600 + z * sc, 225 + (CAMH - y) * sc, sc];
   };
@@ -507,30 +507,55 @@
     }
     g.font = '12px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     g.fillStyle = 'rgba(40,50,55,0.75)'; g.textAlign = 'right'; g.fillText(this.view === 'side' ? (CLOSE[this.task] ? '오른쪽 앞에서 비스듬히 봄' : '옆에서 봄 · 환자 오른쪽이 보임') : '앞에서 봄 · 환자 오른쪽 = 화면 왼쪽', W - 14, 22);
+    if (this.useBg !== false && this.bgImg && this.bgImg[this.bgKey()]) {
+      g.font = '11px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,0.85)';
+      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 3; g.strokeText('AI 생성 배경', 12, H - 10); g.fillText('AI 생성 배경', 12, H - 10);
+    }
     if (this.fade > 0) { g.fillStyle = `rgba(233,238,236,${this.fade})`; g.fillRect(0, 0, W, H); }
   };
 
+  // 실사 배경(ChatGPT, tools/genai_gait.py): 시점별 Image. 있으면 방은 사진, 진찰대·줄자·노란 선·발자국은 코드로 위에 그림
+  P.setBackgrounds = function (m) { this.bgImg = m || {}; };
+  P.bgKey = function () { return (CLOSE[this.task] ? 'close_' : 'hall_') + (this.view === 'side' ? 'side' : 'front'); };
+  P.drawBg = function (g) {
+    const im = this.useBg !== false && this.bgImg && this.bgImg[this.bgKey()];
+    if (!im || !im.complete || !im.naturalWidth) return false;
+    g.drawImage(im, 0, 0, W, H);
+    return true;
+  };
   P.drawRoom = function (g) {
+    const photo = this.drawBg(g);
     if (CLOSE[this.task]) {
       const Hh = AV[this.av].h, seat = this.seatH(), top = seat - 0.045 * Hh;
-      const gw = g.createLinearGradient(0, 0, 0, H); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d3dad8');
-      g.fillStyle = gw; g.fillRect(0, 0, W, H);
       const poly = (pts, fill) => { g.fillStyle = fill; g.beginPath(); pts.forEach((q, i) => { const r = this.project(q[0], q[1], q[2]); i ? g.lineTo(r[0], r[1]) : g.moveTo(r[0], r[1]); }); g.closePath(); g.fill(); };
-      const fx = this.view === 'side' ? 3 : 0.75 * Hh;                                                   // 원근(앞)일 때 카메라 뒤는 그리지 않음
-      poly([[-3, 0, -3], [fx, 0, -3], [fx, 0, 3], [-3, 0, 3]], '#cbc2b4');                                   // 바닥
-      const x0 = -0.3 * Hh, x1 = 0.16 * Hh, z0 = -0.24 * Hh, z1 = 0.24 * Hh;                              // 진찰대
-      poly([[x1, 0, z0], [x1, top, z0], [x1, top, z1], [x1, 0, z1]], '#8a9ea4');
-      if (this.view === 'side') poly([[x0, 0, z0], [x1, 0, z0], [x1, top, z0], [x0, top, z0]], '#a7b8bc');
-      poly([[x0, top, z0], [x1, top, z0], [x1, top, z1], [x0, top, z1]], '#eef1f1');
+      if (!photo) {
+        const gw = g.createLinearGradient(0, 0, 0, H); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d3dad8');
+        g.fillStyle = gw; g.fillRect(0, 0, W, H);
+        const fx = this.view === 'side' ? 3 : 0.75 * Hh;                                                 // 원근(앞)일 때 카메라 뒤는 그리지 않음
+        poly([[-3, 0, -3], [fx, 0, -3], [fx, 0, 3], [-3, 0, 3]], '#cbc2b4');                                 // 바닥
+      }
+      if (this.noBed) return;                                                                            // 실사 배경 기준 그림용
+      // 진찰대: 그림자 · 다리 · 몸체 · 매트리스(흰 시트)
+      const x0 = -0.3 * Hh, x1 = 0.16 * Hh, z0 = -0.24 * Hh, z1 = 0.24 * Hh, mt = 0.05 * Hh, bt = top - mt;
+      poly([[x0 - 0.03 * Hh, 0, z0 - 0.03 * Hh], [x1 + 0.06 * Hh, 0, z0 - 0.03 * Hh], [x1 + 0.06 * Hh, 0, z1 + 0.03 * Hh], [x0 - 0.03 * Hh, 0, z1 + 0.03 * Hh]], 'rgba(40,35,30,0.18)');
+      poly([[x1, 0.04 * Hh, z0], [x1, bt, z0], [x1, bt, z1], [x1, 0.04 * Hh, z1]], '#7d8f95');
+      if (this.view === 'side') poly([[x0, 0.04 * Hh, z0], [x1, 0.04 * Hh, z0], [x1, bt, z0], [x0, bt, z0]], '#98aaaf');
+      for (const z of [z0 + 0.02 * Hh, z1 - 0.02 * Hh]) poly([[x1 - 0.03 * Hh, 0, z], [x1 - 0.01 * Hh, 0, z], [x1 - 0.01 * Hh, 0.04 * Hh, z], [x1 - 0.03 * Hh, 0.04 * Hh, z]], '#5d6b70');
+      poly([[x1, bt, z0], [x1, top, z0], [x1, top, z1], [x1, bt, z1]], '#dfe6e8');                         // 매트리스 앞면
+      if (this.view === 'side') poly([[x0, bt, z0], [x1, bt, z0], [x1, top, z0], [x0, top, z0]], '#d3dcdf');
+      poly([[x0, top, z0], [x1, top, z0], [x1, top, z1], [x0, top, z1]], '#f4f7f7');                      // 윗면(시트)
       return;
     }
     if (this.view === 'side') {
-      const gw = g.createLinearGradient(0, 0, 0, 505); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d5dcda');
-      g.fillStyle = gw; g.fillRect(0, 0, W, 505);
-      g.fillStyle = '#c3ccc9'; g.fillRect(0, 300, W, 8);                                  // 손잡이
-      g.fillStyle = '#b7c1be'; g.fillRect(0, 488, W, 17);                                 // 걸레받이
-      const gf = g.createLinearGradient(0, 505, 0, H); gf.addColorStop(0, '#cfc6b8'); gf.addColorStop(1, '#bdb3a4');
-      g.fillStyle = gf; g.fillRect(0, 505, W, H - 505);
+      if (!photo) {
+        const gw = g.createLinearGradient(0, 0, 0, 505); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d5dcda');
+        g.fillStyle = gw; g.fillRect(0, 0, W, 505);
+        g.fillStyle = '#c3ccc9'; g.fillRect(0, 300, W, 8);                                  // 손잡이
+        g.fillStyle = '#b7c1be'; g.fillRect(0, 488, W, 17);                                 // 걸레받이
+        const gf = g.createLinearGradient(0, 505, 0, H); gf.addColorStop(0, '#cfc6b8'); gf.addColorStop(1, '#bdb3a4');
+        g.fillStyle = gf; g.fillRect(0, 505, W, H - 505);
+      }
+      if (this.noBed) return;
       // 바닥 줄자(0.5 m 눈금)
       g.strokeStyle = 'rgba(70,60,50,0.45)'; g.lineWidth = 1; g.fillStyle = 'rgba(70,60,50,0.6)'; g.font = '11px "IBM Plex Mono", monospace'; g.textAlign = 'center';
       g.beginPath(); g.moveTo(0, 560.5); g.lineTo(W, 560.5); g.stroke();
@@ -540,6 +565,11 @@
     // 복도: 뒷벽(16 m 앞) · 양쪽 벽 · 바닥 타일 · 가운데 테이프. x = 7 - 거리
     const X = (d) => 7 - d, WZ = 1.7, CH = 2.7, FAR = 16, NEAR = 1.25;
     const poly = (pts, fill) => { g.fillStyle = fill; g.beginPath(); pts.forEach((q, i) => { const r = this.project(q[0], q[1], q[2]); i ? g.lineTo(r[0], r[1]) : g.moveTo(r[0], r[1]); }); g.closePath(); g.fill(); };
+    const line = (a, b) => { const r1 = this.project(...a), r2 = this.project(...b); g.beginPath(); g.moveTo(r1[0], r1[1]); g.lineTo(r2[0], r2[1]); g.stroke(); };
+    if (photo) {      // 사진 위에는 가운데 노란 선만
+      if (!this.noBed) { g.strokeStyle = 'rgba(235,195,60,0.9)'; g.lineWidth = 3; line([X(FAR), 0, 0], [X(NEAR), 0, 0]); }
+      return;
+    }
     g.fillStyle = '#dfe5e3'; g.fillRect(0, 0, W, H);
     poly([[X(FAR), 0, -WZ], [X(FAR), 0, WZ], [X(NEAR), 0, WZ], [X(NEAR), 0, -WZ]], '#cbc2b4');               // 바닥
     poly([[X(FAR), 0, -WZ], [X(NEAR), 0, -WZ], [X(NEAR), CH, -WZ], [X(FAR), CH, -WZ]], '#d3dad8');          // 오른쪽 벽(화면 왼쪽)
@@ -547,11 +577,10 @@
     poly([[X(FAR), CH, -WZ], [X(FAR), CH, WZ], [X(NEAR), CH, WZ], [X(NEAR), CH, -WZ]], '#eef1f0');          // 천장
     poly([[X(FAR), 0, -WZ], [X(FAR), 0, WZ], [X(FAR), CH, WZ], [X(FAR), CH, -WZ]], '#e7ecea');              // 뒷벽
     g.strokeStyle = 'rgba(90,80,70,0.18)'; g.lineWidth = 1;
-    const line = (a, b) => { const r1 = this.project(...a), r2 = this.project(...b); g.beginPath(); g.moveTo(r1[0], r1[1]); g.lineTo(r2[0], r2[1]); g.stroke(); };
     for (let z = -WZ; z <= WZ + 1e-6; z += WZ / 3) line([X(FAR), 0, z], [X(NEAR), 0, z]);
     for (let d = 2; d <= FAR; d += 1) line([X(d), 0, -WZ], [X(d), 0, WZ]);
     for (const z of [-WZ, WZ]) { g.strokeStyle = 'rgba(150,160,158,0.8)'; g.lineWidth = 3; line([X(FAR), 0.9, z], [X(NEAR), 0.9, z]); g.lineWidth = 1; }   // 손잡이
-    g.strokeStyle = 'rgba(225,190,80,0.85)'; g.lineWidth = 2; line([X(FAR), 0, 0], [X(NEAR), 0, 0]);
+    if (!this.noBed) { g.strokeStyle = 'rgba(225,190,80,0.85)'; g.lineWidth = 2; line([X(FAR), 0, 0], [X(NEAR), 0, 0]); }
   };
 
   P.drawPrints = function (g) {
@@ -621,6 +650,10 @@
       g.lineCap = 'round';
       if (outline !== false) { g.strokeStyle = 'rgba(40,28,22,0.35)'; g.lineWidth = w * sc + 2; g.beginPath(); g.moveTo(A2[0], A2[1]); g.lineTo(B2[0], B2[1]); g.stroke(); }
       g.strokeStyle = col; g.lineWidth = w * sc; g.beginPath(); g.moveTo(A2[0], A2[1]); g.lineTo(B2[0], B2[1]); g.stroke();
+      if (outline !== false && w * sc > 5) {      // 위쪽 하이라이트: 납작해 보이지 않게(실사 배경 위에서)
+        const o = w * sc * 0.2; g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = w * sc * 0.3;
+        g.beginPath(); g.moveTo(A2[0] - o * 0.4, A2[1] - o); g.lineTo(B2[0] - o * 0.4, B2[1] - o); g.stroke();
+      }
     };
     const drawLeg = (s, dim) => {
       const l = legs[s], k = dim ? 0.86 : 1;
