@@ -877,7 +877,12 @@
           }
         }
       }
-      eyes[s] = { cx, cy, r, rI, n, lidL, lowB, plate, pX0, pY0, pW, pH, lidT: lidTs, nT, mask: soft, iris: cn ? [cr / cn, cgr / cn, cb / cn] : [70, 45, 30], tmp: makeCanvas(size, size) };
+      // 윗눈꺼풀 선의 매끈한 곡선(±1.9r 의 lidTs 에 포물선 최소제곱): 아래 시선 때 눈꺼풀을 내리는 기준(열마다 값은 계단이 생김)
+      let S0 = 0, S2 = 0, S4 = 0, T0 = 0, T2 = 0;
+      for (let q = -Math.round(1.9 * r); q <= Math.round(1.9 * r); q++) { const tq = q / r, v = lidTs[q + nT]; if (v === undefined) continue; S0++; S2 += tq * tq; S4 += tq ** 4; T0 += v; T2 += v * tq * tq; }
+      const den = S0 * S4 - S2 * S2, lc = den ? (T0 * S4 - T2 * S2) / den : 0.9 * r, la = den ? (S0 * T2 - S2 * T0) / den : -0.2 * r;
+      const lidFit = (x) => Math.max(0.05 * r, lc + la * ((x - cx) / r) ** 2);
+      eyes[s] = { cx, cy, r, rI, n, lidL, lowB, lidFit, plate, pX0, pY0, pW, pH, lidT: lidTs, nT, mask: soft, iris: cn ? [cr / cn, cgr / cn, cb / cn] : [70, 45, 30], tmp: makeCanvas(size, size) };
     }
     if (p.paint) for (const s of ['R', 'L']) paintSclera(sg, data, w, eyes[s], S[s], ves[s], s);
     const px = p.paint ? sg.getImageData(0, 0, w, h).data : data;          // 워프할 때 읽는 원본 픽셀
@@ -958,7 +963,7 @@
   function warpEye(P, e, dx, dy, f) {
     const key = dx.toFixed(1) + ',' + dy.toFixed(1) + ',' + f.toFixed(3);
     if (e.wkey === key) return; e.wkey = key;
-    const { cx, cy, r, rI, lidL, lowB, lidT, nT } = e, w = P.w, h = P.h, src = P.px;
+    const { cx, cy, r, rI, lidL, lowB, lidT, nT, lidFit } = e, w = P.w, h = P.h, src = P.px;
     const x0 = Math.max(0, Math.floor(cx - 2.7 * r)), x1 = Math.min(w - 1, Math.ceil(cx + 2.7 * r));
     const y0 = Math.max(0, Math.floor(cy - 2.6 * r)), y1 = Math.min(h - 1, Math.ceil(cy + 2.3 * r));
     const rw = x1 - x0, rh = y1 - y0;
@@ -978,7 +983,10 @@
     }
     // 위아래 이동량(원본 사진 높이 t = y - cy 에서 얼마나 옮기나): 윗눈꺼풀은 눈알을 따라감(쌍꺼풀 위 2.3r 부터 서서히), 그 아래 눈알 = dy
     // 아랫눈꺼풀 선(lowB) 아래는 0 → 아래 반복문에서 wl 로 처리
-    const F = (t) => t < -r ? dy * smooth(-2.3 * r, -r, t) : dy;
+    // 아래를 볼 때는 눈알만(윗눈꺼풀 선 아래) 옮기고 윗눈꺼풀·쌍꺼풀은 제자리 → 눈꺼풀은 drawPhotoEyes 에서 깜빡임처럼 피부를 늘여 내림(꺾임 없음)
+    //   경계는 열마다 그 사람의 윗눈꺼풀 곡선(lidFit) 바로 아래부터 — 눈이 크거나 눈꺼풀이 낮아도 눈꺼풀이 안 끌려 옴
+    const LU = new Float32Array(rw); for (let i = 0; i < rw; i++) LU[i] = lidFit(x0 + i);
+    const F = (t, i) => dy > 0 ? dy * smooth(-LU[i] + 0.04 * r, -LU[i] + 0.4 * r, t) : t < -r ? dy * smooth(-2.3 * r, -r, t) : dy;
     const mg = 0.08 * r, mf = 0.1 * r, RI2 = (1.06 * rI) ** 2;
     const HB = new Float32Array(rw); for (let i = 0; i < rw; i++) HB[i] = lowB(x0 + i);
     const samp = (arr, W2, x, y, o, st) => {     // 양선형 보간으로 한 점 읽기(st = 한 픽셀 칸 수: 사진 4, 배경판 3)
@@ -998,7 +1006,7 @@
         const wl = clamp((HB[i] + 1.2 - tyL) / 2.4, 0, 1);
         // 화면 y 가 원본 어디서 왔나: y = s + HW·F(s - cy) 를 몇 번 되풀이해 풂
         let sy = y;
-        if (dy && wl > 0) { for (let q = 0; q < 4; q++) sy = y - HW[i] * F(sy - cy); sy = y + wl * (sy - y); }
+        if (dy && wl > 0) { for (let q = 0; q < 4; q++) sy = y - HW[i] * F(sy - cy, i); sy = y + wl * (sy - y); }
         const sx = clamp(x + aw * (HX[i] - x), 0, w - 1.001);
         sy = clamp(sy, 0, h - 1.001);
         const o = (j * rw + i) * 4;
@@ -1099,7 +1107,7 @@
       const e = P.eyes[s], gz = this.eyeGaze(s);
       // 위로는 0.22r 까지만: 아랫눈꺼풀이 안 따라가서 홍채 아래로 원래 가려 있던 곳이 드러나는데, 그 부분은 사진에 없어 메워야 하므로 작게
       // 아래로는 0.4r(홍채가 아랫눈꺼풀 뒤로 들어가고 윗눈꺼풀이 따라옴 — 메울 곳 없음)
-      const dx = clamp(gz.x * 0.8, -0.85, 0.85) * e.r, dy = (gz.y < 0 ? clamp(gz.y * 0.25, -0.22, 0) : clamp(gz.y * 0.4, 0, 0.4)) * e.r, f = 1 - 0.12 * Math.min(1, Math.abs(gz.x));
+      const dx = clamp(gz.x * 0.8, -0.85, 0.85) * e.r, dy = (gz.y < 0 ? clamp(gz.y * 0.25, -0.22, 0) : clamp(gz.y * 0.5, 0, 0.5)) * e.r, f = 1 - 0.12 * Math.min(1, Math.abs(gz.x));
       if (Math.abs(dx) > 0.15 || Math.abs(dy) > 0.15 || e.wkey) {
         warpEye(P, e, dx, dy, f);
         if (Math.abs(dx) <= 0.15 && Math.abs(dy) <= 0.15) e.wkey = null;   // 정면으로 돌아옴(원본과 같음): 다음부터 워프 안 함
@@ -1153,16 +1161,30 @@
       g.lineTo(P.ox + (e.cx + 2.6 * e.r) * k, P.oy + (e.cy - 3 * e.r) * k); g.lineTo(P.ox + (e.cx - 2.6 * e.r) * k, P.oy + (e.cy - 3 * e.r) * k); g.closePath(); g.clip();
       g.drawImage(t, X - n * k * of, Y - n * k, t.width * k * of, t.height * k);   // 홍채와 함께 옮기고, 옆을 보면 좁게
       g.restore();
+      // 아래 시선: 윗눈꺼풀이 따라 내려옴(눈 틈의 38%까지). 사진에서 잰 윗눈꺼풀 선에 맞춘 매끈한 곡선(lidFit) 기준으로 열마다
+      //   그 위 피부 + 속눈썹 선을 아래로 늘임 → 속눈썹이 사진 그대로 내려오고 따로 그린 선이 없음. 눈꼬리로 갈수록 0
+      const gyd = clamp(this.eyeGaze(s).y, 0, 1);
+      if (gyd > 0.02) {
+        for (let x = e.cx - 2.1 * e.r; x <= e.cx + 2.1 * e.r; x += 1) {
+          const ax = (x - e.cx) / (2.1 * e.r), tp = Math.max(0, 1 - ax * ax);
+          const yu = e.cy - e.lidFit(x), yl = e.cy + e.lowB(x);
+          // 적어도 홍채가 내려간 만큼(+약간)은 내려옴: 눈 틈이 큰 사람(어린이)도 홍채 위로 틈이 안 생기게(실제로 눈꺼풀이 눈알을 따라감)
+          const drop = Math.max(Math.max(0, yl - yu) * 0.38 * gyd, (off[s][1] + 0.08 * e.r * gyd)) * tp; if (drop < 0.3) continue;
+          const Hs = 0.9 * e.r * Math.sqrt(tp) + 2, top = yu - Hs, lash = 0.06 * e.r;
+          g.drawImage(P.cur, x, top, 1, Hs + lash, P.ox + x * k, P.oy + top * k, k + 0.5, (Hs + lash + drop) * k);
+        }
+      }
       // 깜빡임·눈부심 찡그림: 윗눈꺼풀 피부를 아래로 늘여 덮음(피부 진찰실과 같은 방법)
       const bl = d.blink > 0 ? Math.sin(d.blink * Math.PI) : 0;
       let c = 1 - (1 - bl * 0.97) * (1 - 0.5 * d.squint[s]);
       if (this.S.glob.conscious === 'coma') c = Math.max(c, 0.95);
       if (d.holdLids) c = Math.min(c, 0.08);
       if (c > 0.01) {
-        const X = P.ox + e.cx * k;          // 눈꺼풀은 옆으로는 안 움직임(위아래 시선만 따라감)
+        const X = P.ox + e.cx * k;          // 눈꺼풀은 옆으로는 안 움직임
+        const YB = P.oy + (e.cy + Math.min(0, ody)) * k;   // 눈꺼풀 기준 높이: 위를 볼 땐 눈꺼풀이 워프로 같이 올라가 있음, 아래를 볼 땐 제자리
         const RX = e.r * 2.4 * k, RY = e.r * 1.1 * k, step = 0.8, edge = [];
         for (let x = X - RX; x <= X + RX; x += step) {
-          const q = Math.sqrt(Math.max(0, 1 - ((x - X) / RX) ** 2)), yu = Y - RY * q, yl = Y + RY * 0.85 * q, ym = yu + (yl - yu) * c;
+          const q = Math.sqrt(Math.max(0, 1 - ((x - X) / RX) ** 2)), yu = YB - RY * q, yl = YB + RY * 0.85 * q, ym = yu + (yl - yu) * c;
           const Hs = RY * 1.7 * q;          // 늘이는 높이도 눈 끝으로 갈수록 0 → 이음매가 안 보임
           edge.push([x, ym]); if (ym - yu < 0.2 || Hs < 0.5) continue;
           g.drawImage(P.cur, (x - P.ox) / k, (yu - Hs - P.oy) / k, step / k, Hs / k, x, yu - Hs, step + 0.4, Hs + (ym - yu));
