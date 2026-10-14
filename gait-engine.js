@@ -4,6 +4,7 @@
  * 걸음: 정상 보행의 엉덩·무릎·발목 각도 곡선(보행 주기 10% 간격)에 질환별 파라미터를 입힘. 디딘 발을 바닥에 고정해 몸을 앞으로 옮김(미끄러짐 없음)
  * 검사: walk 걸음걸이 / heel 발뒤꿈치 보행 / toe 발끝 보행 / romberg (발 모으고 눈 뜨고 → 눈 감고) / tandem 일자 보행
  *       앉아서 하는 협조운동(가까이 비스듬히 봄): fnt finger to nose / hts heel to shin / ram 빠른 교대운동 / drift pronator drift
+ *       앉아서 하는 반사: dtr_arm 이두근·상완요골근 / dtr_leg 무릎·발목 반사 / clonus 발목 간대 (반사망치·검사자 손)
  * 파라미터는 tools/gait_presets.py 의 프리셋(g). 모든 값 0이면 정상.
  */
 (function () {
@@ -72,6 +73,8 @@
     var: 0, sway: 0, waddle: 0, shuffle: 0, festinate: 0, stamp: 0, chorea: 0, scissor: 0, lordosis: 0, unable: null, assist: 0,
     tandem: 0, pTrem: 0,      // tandem 일자 보행 때 헛디딤(1이면 몇 걸음 못 감), pTrem 팔 뻗은 자세 떨림(본태떨림)
     lean: 0,                  // 걸을 때 몸이 한쪽으로 기울고 쏠림 (음수 = 환자 오른쪽)
+    // 반사(강도로 섞지 않음): dtr 등급 0~4 {R:{bi,br,kn,an}, L:{…}, all:{…}}, clonus 발목 간대 박동 수 {R, L}(8 이상 = 지속), relax 이완 지연(갑상선기능저하)
+    dtr: null, clonus: null, relax: 0,
     R: {}, L: {},
     rom: { open: 0.4, closed: 0.6, dir: 0, fall: 0, wide: 0 },
   };
@@ -81,7 +84,17 @@
   // kTrem 움직일 때 규칙적 떨림(본태떨림), ddk 교대운동 불규칙(소뇌), brady 느리고 점점 작아짐(파킨슨), drift 눈 감으면 팔 처지며 엎침(상위운동신경)
   const SIDE = { stanceShort: 0, kneeStiff: 0, footDrop: 0, steppage: 0, circum: 0, hipDrop: 0, noPush: 0, outToe: 0, heelWeak: 0, toeWeak: 0, armHeld: 0, stride: 1, equinus: 0,
     dysm: 0, inten: 0, legDysm: 0, kTrem: 0, ddk: 0, brady: 0, drift: 0 };
-  const CLOSE = { fnt: 1, hts: 1, ram: 1, drift: 1 };   // 앉아서, 가까이 비스듬히 보는 검사
+  const CLOSE = { fnt: 1, hts: 1, ram: 1, drift: 1, dtr_arm: 1, dtr_leg: 1, clonus: 1 };   // 앉아서, 가까이 비스듬히 보는 검사
+  const HANG = { dtr_leg: 1, clonus: 1 };                // 다리가 바닥에서 떠 있어야 하는 검사(진찰대를 높임)
+  // 반사 반응(0~1.2): 등급 g, 친 뒤 시간 tau. 4+ 는 여러 번 튐, relax 면 천천히 돌아옴
+  function reflex(g, tau, relax) {
+    const lat = 0.04, rise = 0.08, fall = 0.22 * (1 + 3 * (relax || 0));
+    const A = [0, 0.25, 0.6, 1.0, 1.15][clamp(Math.round(g), 0, 4)];
+    const one = (u) => u < 0 ? 0 : u < rise ? Math.sin(Math.PI / 2 * u / rise) : Math.exp(-(u - rise) / fall);
+    let r = A * one(tau - lat);
+    if (g >= 4) r += 0.6 * A * one(tau - lat - 0.32) + 0.35 * A * one(tau - lat - 0.62);
+    return r;
+  }
 
   function GaitEngine(canvas) {
     this.c = canvas; this.g = canvas.getContext('2d');
@@ -91,7 +104,8 @@
   }
   GaitEngine.VIEWS = { side: '옆에서', front: '앞에서' };
   GaitEngine.TASKS = { walk: '걸음걸이', heel: '발뒤꿈치 보행', toe: '발끝 보행', romberg: 'Romberg', tandem: '일자 보행',
-    fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift' };
+    fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift',
+    dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus' };
   GaitEngine.CLOSE = CLOSE;
   const P = GaitEngine.prototype;
 
@@ -114,6 +128,9 @@
       } else o[key] = key in this.raw ? mix(DEF[key], this.raw[key]) : DEF[key];
     }
     o.unable = this.raw.unable || null; o.assist = this.raw.assist || 0;
+    const rd = this.raw.dtr || {}, base = Object.assign({ bi: 2, br: 2, kn: 2, an: 2 }, rd.all || {});
+    o.dtr = { R: Object.assign({}, base, rd.R || {}), L: Object.assign({}, base, rd.L || {}) };
+    o.clonus = Object.assign({ R: 0, L: 0 }, this.raw.clonus || {}); o.relax = this.raw.relax || 0;
     this.p = o;
   };
 
@@ -315,7 +332,7 @@
   P.solveSeated = function (dt, L) {
     const p = this.p, A = AV[this.av], Hh = A.h, t = this.t, task = this.task, U = Hh / 1.7;
     const out = { legs: {}, H: Hh, L, standing: true, eyes: 1 };
-    const seat = L.sh + L.ank, sgOf = (s) => s === 'R' ? -1 : 1, nm = (s) => s === 'R' ? '오른' : '왼';
+    const seat = this.seatH(), sgOf = (s) => s === 'R' ? -1 : 1, nm = (s) => s === 'R' ? '오른' : '왼';
     const oth = (s) => s === 'R' ? 'L' : 'R';
     for (const s of ['R', 'L']) out.legs[s] = { hip: 90, knee: 90, ank: 0, lat: sgOf(s) * (L.hipW + 0.01 * U), hipZ: sgOf(s) * L.hipW, ph: 0, sw: 0, outToe: 0 };
     const pole = (s) => [-0.6, -1, sgOf(s) * 0.7];                                   // 팔꿈치: 뒤·아래·바깥
@@ -390,6 +407,39 @@
         const tg = add(onThigh(s), [st.off[0], Math.sin(Math.PI * u) * 0.055 * Hh * st.amp, st.off[1]]);
         out.legs[s].arm = { tgt: add(tg, trem(q, s === 'R' ? 0 : 2)), pole: pole(s), rot: lerp(st.r0, st.r1, e) };
       }
+    } else if (task === 'dtr_leg' || task === 'dtr_arm') {
+      // 반사망치로 힘줄을 침: 다리 = 오른 무릎 → 왼 무릎 → 오른 발목 → 왼 발목 / 팔 = 이두근 R·L → 상완요골근 R·L
+      const per = 1.9, k = Math.floor(t / per) % 4, s = k % 2 ? 'L' : 'R', u = t % per, at = task === 'dtr_leg' ? (k < 2 ? 'kn' : 'an') : (k < 2 ? 'bi' : 'br');
+      const NM = { kn: '무릎반사', an: '발목반사', bi: '이두근반사', br: '상완요골근반사' };
+      this.hud = `${nm(s)}쪽 ${NM[at]}`;
+      const sw = u < 0.15 ? 0.2 : u < 0.45 ? lerp(0.2, 0, ease((u - 0.15) / 0.3)) : u < 0.55 ? ease((u - 0.45) / 0.1) : u < 0.7 ? lerp(1, 0.85, (u - 0.55) / 0.15) : lerp(0.85, 0.45, (u - 0.7) / (per - 0.7));
+      const r = reflex(p.dtr[s][at], u - 0.55, p.relax);
+      for (const a of ['R', 'L']) {
+        if (task === 'dtr_leg') { out.legs[a].arm = { tgt: onBed(a), pole: [-0.3, -0.4, sgOf(a)] }; continue; }
+        // 팔: 아래팔을 무릎 위에 반쯤 굽혀 올림(엄지가 위). 반사 = 팔꿈치 굽힘(+상완요골근은 약간 뒤침)
+        const me = a === s ? r : 0;
+        out.legs[a].arm = { sh: 12, el: 70 + 26 * me, abd: 8, rot: Math.PI / 2 + (at === 'br' ? 0.35 * me : 0) };
+      }
+      if (task === 'dtr_leg') {
+        if (at === 'kn') out.legs[s].knee = 90 - 30 * r;                         // 무릎이 펴짐
+        else { out.legs[s].ank = 8 - 24 * r; out.exam = { foot: s }; }           // 검사자가 발을 살짝 발등 쪽으로, 반사 = 발바닥 굽힘
+      }
+      out.hammer = { at, side: s, s: sw };
+      head = 10;
+    } else if (task === 'clonus') {
+      // 무릎을 살짝 굽힌 채 발을 빠르게 발등 쪽으로 굽혀 누르고 있음 → 박동(5~7 Hz) 수를 봄. 오른쪽 → 왼쪽
+      const per = 4.2, s = Math.floor(t / per) % 2 ? 'L' : 'R', u = t % per, n = p.clonus[s];
+      this.hud = `${nm(s)}쪽 발목을 빠르게 발등 쪽으로 굽혀 누르기`;
+      let ank = 0;
+      if (u > 0.6 && u < 3.4) {
+        const v = u - 0.6; ank = 20 * ease(clamp(v / 0.15, 0, 1));
+        const beats = n >= 8 ? 99 : n, f = 6, b = v - 0.15;
+        if (b > 0 && b * f < beats) ank -= 7 * Math.max(0, Math.sin(Math.PI * 2 * f * b)) * (n >= 8 ? 1 : 1 - b * f / (beats + 1));
+      } else if (u >= 3.4) ank = 20 * (1 - ease(clamp((u - 3.4) / 0.3, 0, 1)));
+      out.legs[s].ank = ank; out.legs[s].knee = 82;
+      out.exam = { foot: s, push: 1 };
+      for (const a of ['R', 'L']) out.legs[a].arm = { tgt: onBed(a), pole: [-0.3, -0.4, sgOf(a)] };
+      head = 12;
     } else {
       // pronator drift: 양팔을 앞으로 뻗고 손바닥 위로 → 눈 감고 10초
       const tt = t % 15;
@@ -411,6 +461,7 @@
   };
 
   // ------------------------------------------------------------------ 그리기
+  P.seatH = function () { return (0.285 + (HANG[this.task] ? 0.07 : 0)) * AV[this.av].h; };   // 진찰대 높이(엉덩관절)
   // 가까이 보는 검사의 카메라: 옆에서 = 오른쪽 앞 비스듬히(38°), 앞에서 = 정면
   P.camPhi = function () { return (this.view === 'side' ? 38 : 90) * D2R; };
   P.depth = function (q) { const f = this.camPhi(); return -q[0] * Math.sin(f) + q[2] * Math.cos(f); };   // 클수록 멂
@@ -430,9 +481,9 @@
       return [600 + z * sc, 230 - (y - c.Y) * sc, sc];
     }
     if (CLOSE[this.task]) {
-      const S = 700 / Hh, f = this.camPhi(), c = Math.cos(f), s = Math.sin(f);
+      const hg = HANG[this.task], S = (hg ? 620 : 700) / Hh, f = this.camPhi(), c = Math.cos(f), s = Math.sin(f);   // 다리를 늘어뜨린 검사는 발밑까지 보이게
       const h = x * c + z * s, dep = -x * s + z * c;
-      return [600 + (h - 0.12 * Hh * c) * S, 578 - (y + dep * 0.3) * S, S];
+      return [600 + (h - 0.12 * Hh * c) * S, (hg ? 530 : 578) - (y + dep * 0.3) * S, S];
     }
     if (this.view === 'side') {
       const S = 225;                                   // 1 m = 225 px (아이는 실제 키대로 작게)
@@ -461,7 +512,7 @@
 
   P.drawRoom = function (g) {
     if (CLOSE[this.task]) {
-      const Hh = AV[this.av].h, seat = 0.285 * Hh, top = seat - 0.045 * Hh;
+      const Hh = AV[this.av].h, seat = this.seatH(), top = seat - 0.045 * Hh;
       const gw = g.createLinearGradient(0, 0, 0, H); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d3dad8');
       g.fillStyle = gw; g.fillRect(0, 0, W, H);
       const poly = (pts, fill) => { g.fillStyle = fill; g.beginPath(); pts.forEach((q, i) => { const r = this.project(q[0], q[1], q[2]); i ? g.lineTo(r[0], r[1]) : g.moveTo(r[0], r[1]); }); g.closePath(); g.fill(); };
@@ -659,16 +710,37 @@
     };
     // 그림자
     if (CLOSE[this.task]) {
-      if (o.exam) {             // 검사자 손(흰 가운 소매)
+      if (o.exam && o.exam.fp) {  // 검사자 손(흰 가운 소매)
         const f = o.exam.fp, fr = !side;          // 앞에서 볼 때는 검사자 팔이 화면 오른쪽 옆에서 들어옴
         const el = add(f, fr ? [0.05 * Hh, -0.1 * Hh, 0.22 * Hh] : [0.2 * Hh, -0.1 * Hh, 0.04 * Hh]), sl = add(el, fr ? [0.03 * Hh, -0.05 * Hh, 0.12 * Hh] : [0.12 * Hh, -0.05 * Hh, 0.02 * Hh]);
         cap(sl, el, 0.07 * Hh, '#f3f5f6'); cap(el, add(f, [0.03 * Hh, -0.01 * Hh, 0]), 0.045 * Hh, '#e2b996');
         cap(add(f, [0.03 * Hh, -0.01 * Hh, 0]), f, 0.016 * Hh, '#e2b996');
       }
+      const UP = [0, 1, 0];
+      const drawHammer = () => {          // 반사망치(Taylor): 손잡이 + 삼각 고무 머리. s: 0 = 들어 올림, 1 = 힘줄에 닿음
+        const hm = o.hammer; if (!hm) return;
+        const a = arms[hm.side], l = legs[hm.side];
+        const T = { kn: add(l.knee, [0.03 * Hh, -0.045 * Hh, 0]), an: add(l.ankle, [-0.03 * Hh, 0.035 * Hh, 0]),
+          bi: add(lerp3(a.E, a.Wr, 0.12), [0, 0.03 * Hh, 0]), br: add(lerp3(a.E, a.Wr, 0.72), [0, 0.03 * Hh, 0]) }[hm.at];
+        const d = norm({ kn: [1, 0.25, 0], an: [-1, 0.3, 0], bi: [0.8, 1, 0], br: [0.8, 1, 0] }[hm.at]);
+        if (hm.at === 'bi') cap(add(T, [0.07 * Hh, 0.01 * Hh, 0.02 * Hh]), T, 0.03 * Hh, '#e2b996');   // 검사자 엄지를 힘줄 위에 대고 그 위를 침
+        const head = add(add(T, mul(d, 0.02 * Hh + 0.13 * Hh * (1 - hm.s))), mul(UP, 0.06 * Hh * (1 - hm.s)));
+        const hd = norm(add(d, mul(UP, 0.6))), end = add(head, mul(hd, 0.2 * Hh)), cr = norm(cross(hd, [0, 0, 1]));
+        cap(head, end, 0.012 * Hh, '#9aa3a8'); cap(end, add(end, mul(hd, 0.06 * Hh)), 0.04 * Hh, '#e2b996');
+        cap(add(head, mul(cr, -0.025 * Hh)), add(head, mul(cr, 0.025 * Hh)), 0.03 * Hh, '#b23a32');
+      };
+      const drawExamHand = () => {        // 검사자 손: 발바닥 앞쪽을 받쳐 발등 쪽으로 밂
+        if (!o.exam || !o.exam.foot) return;
+        const l = legs[o.exam.foot], ball = lerp3(l.heel, l.toe, 0.75), under = add(ball, [0.01 * Hh, -0.025 * Hh, 0]);
+        cap(add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), under, 0.05 * Hh, '#e2b996');
+        cap(add(under, [0.3 * Hh, -0.1 * Hh, 0.03 * Hh]), add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), 0.07 * Hh, '#f3f5f6');
+      };
       const byDepth = (a, b) => this.depth(legs[b].ankle) - this.depth(legs[a].ankle);
       const lo = ['R', 'L'].sort(byDepth);
-      if (side) { drawArm('L', true); drawTrunk(); drawHead(); lo.forEach((s) => drawLeg(s, s === 'L')); drawArm('R', false); }
-      else { lo.forEach((s) => drawLeg(s, false)); drawTrunk(); drawHead(); drawArm('R', false); drawArm('L', false); }
+      const behind = o.hammer && o.hammer.at === 'an';      // 발목반사는 아킬레스건(뒤)을 치므로 망치를 다리보다 먼저
+      if (side) { drawArm('L', true); drawTrunk(); drawHead(); if (behind) drawHammer(); lo.forEach((s) => drawLeg(s, s === 'L')); drawArm('R', false); }
+      else { if (behind) drawHammer(); lo.forEach((s) => drawLeg(s, false)); drawTrunk(); drawHead(); drawArm('R', false); drawArm('L', false); }
+      drawExamHand(); if (!behind) drawHammer();
       return;
     }
     const sh0 = PJ([0, 0, pv.z]);
