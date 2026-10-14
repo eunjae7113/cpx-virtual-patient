@@ -1027,9 +1027,9 @@
     P.cur.getContext('2d').putImageData(e.wimg, x0, y0);
     e.wr = [x0, y0, rw, rh];
   }
-  // 지금 사진으로 그려도 되는지: Dix-Hallpike(회전 안진)가 아닐 때. 시선 이동은 워프로, 아래 눈꺼풀 당기기는 drawPhotoEvert 로 사진에서 그림
+  // 지금 사진으로 그려도 되는지: 눈 진찰 화면이면 모두. 시선 이동은 워프, 아래 눈꺼풀 당기기는 drawPhotoEvert, 회선성 안진(Dix-Hallpike)은 홍채 돌리기
   EyeEngine.prototype.usePhoto = function () {
-    const d = this.dyn; return !!this.photoPrep && d.mode === 'eyes' && !d.dix;
+    const d = this.dyn; return !!this.photoPrep && d.mode === 'eyes';
   };
   // 사진에서 아래 눈꺼풀 당기기: 아랫눈꺼풀 선(lowB) 아래 피부를 아래로 끌어내리고(볼 쪽은 제자리라 눌려 모임),
   // 벌어진 틈에 아래 흰자 → 원개부 그늘 → 검결막(정상 붉음 / 빈혈 창백 / 충혈 더 붉음, 혈관결·점상출혈) → 눈꺼풀 가장자리·속눈썹을 칠함
@@ -1106,6 +1106,25 @@
       }
       if (e.wr) { const [x0, y0, rw, rh] = e.wr; g.drawImage(P.cur, x0, y0, rw, rh, P.ox + x0 * k, P.oy + y0 * k, rw * k, rh * k); }
       off[s] = [dx, dy, f];
+      const tor = gz.tor || 0;
+      if (Math.abs(tor) > 0.2) {     // 회선성 안진(Dix-Hallpike): 보이는 홍채를 중심으로 돌림 + 옅은 방사형 결(짙은 홍채에서도 돌아가는 게 보이게). 눈꺼풀 안쪽만
+        const cx = e.cx + dx, cy = e.cy + dy, R = e.rI * 1.02, SX = P.ox + cx * k, SY = P.oy + cy * k;
+        g.save(); g.beginPath();
+        for (let q = -1.2; q <= 1.21; q += 0.1) { const xq = cx + q * R, kk = clamp(Math.round(xq - e.cx) + e.nT, 0, e.lidT.length - 1); g.lineTo(P.ox + xq * k, P.oy + (e.cy - e.lidT[kk]) * k); }
+        for (let q = 1.2; q >= -1.21; q -= 0.1) { const xq = cx + q * R; g.lineTo(P.ox + xq * k, P.oy + (e.cy + e.lowB(xq)) * k); }
+        g.closePath(); g.clip();
+        g.beginPath(); g.arc(SX, SY, R * k, 0, 7); g.clip();
+        g.translate(SX, SY); g.rotate(tor * Math.PI / 180);
+        g.drawImage(P.cur, cx - R, cy - R, 2 * R, 2 * R, -R * k, -R * k, 2 * R * k, 2 * R * k);
+        const c = e.iris, rr = rng(s === 'R' ? 31 : 47);
+        g.lineWidth = Math.max(0.6, 0.03 * e.r * k);
+        for (let a = 0; a < 6.28; a += 0.26) {
+          const a2 = a + (rr() - 0.5) * 0.12, r0 = e.r * 0.42 * k, r1 = e.r * (0.82 + rr() * 0.12) * k;
+          g.strokeStyle = rr() < 0.5 ? `rgba(${Math.min(255, c[0] * 1.9) | 0},${Math.min(255, c[1] * 1.8) | 0},${Math.min(255, c[2] * 1.6) | 0},0.28)` : 'rgba(10,6,4,0.3)';
+          g.beginPath(); g.moveTo(Math.cos(a2) * r0, Math.sin(a2) * r0); g.lineTo(Math.cos(a2 + 0.06) * r1, Math.sin(a2 + 0.06) * r1); g.stroke();
+        }
+        g.restore();
+      }
     }
     for (const s of ['R', 'L']) {
       const e = P.eyes[s], [odx, ody, of] = off[s], X = P.ox + (e.cx + odx) * k, Y = P.oy + (e.cy + ody) * k, S = this.S[s];
