@@ -588,8 +588,9 @@
       }
       if (this.act && EDEMA[this.act.k]) {
         const side = this.act.k.split('.')[0], v = EDEMA[this.act.k], kk = this.since(), gr = p.nonpit || p.tense === side ? 0 : p[side] || 0;
-        if (kk < 2) finger(g, v[0], v[1], ease(kk / 0.5));
-        else if (gr) { const fade = clamp(1 - (kk - 2) / REC[Math.min(4, gr)], 0, 1); if (fade > 0) ell(g, v[0], v[1], 10 + gr * 4, 7 + gr * 3, `rgba(70,30,20,${0.45 * fade})`); }
+        const py = v[1] + 34; // 동그라미 바로 아래를 누름(자국이 동그라미에 가리지 않게)
+        if (kk < 2) finger(g, v[0], py, ease(kk / 0.5));
+        else if (gr) { const fade = clamp(1 - (kk - 2) / REC[Math.min(4, gr)], 0, 1); if (fade > 0) ell(g, v[0], py, 10 + gr * 4, 7 + gr * 3, `rgba(70,30,20,${0.55 * fade})`, `rgba(40,15,10,${0.5 * fade})`, 1.5); }
       }
       if (p.face) { ell(g, 1080, 120, 80, 80, '#1a2529', 'rgba(150,200,190,.35)'); face(this, g, 1080, 125, 55, { puffy: 1.2 }); note(g, '얼굴', 1080, 222); }
     },
@@ -979,12 +980,12 @@
 
   // ================================================================ 청력 — 속삭임·Weber·Rinne
   S.hear = {
-    pts() { return [{ k: 'wR', x: 430, y: 290, n: '오른쪽 귀에 속삭이기(반대쪽 귀는 막고)' }, { k: 'wL', x: 770, y: 290, n: '왼쪽 귀에 속삭이기' }, { k: 'weber', x: 600, y: 140, n: 'Weber — 이마 가운데에 소리굽쇠' }, { k: 'rR', x: 430, y: 380, n: '오른쪽 Rinne — 귀 뒤 뼈 → 귀 앞' }, { k: 'rL', x: 770, y: 380, n: '왼쪽 Rinne' }]; },
+    pts() { return [{ k: 'wR', x: 430, y: 290, n: '오른쪽 귀에 속삭이기(반대쪽 귀는 막고)' }, { k: 'wL', x: 770, y: 290, n: '왼쪽 귀에 속삭이기' }, { k: 'weber', x: 600, y: 215, n: 'Weber — 이마 가운데에 소리굽쇠' }, { k: 'rR', x: 430, y: 380, n: '오른쪽 Rinne — 귀 뒤 뼈 → 귀 앞' }, { k: 'rL', x: 770, y: 380, n: '왼쪽 Rinne' }]; },
     hint: '귀 옆(속삭임)·이마(Weber)·귀 뒤(Rinne) 동그라미를 눌러 보세요',
-    draw(g) { floor(g, 560); face(this, g, 600, 290, 200, {}); if (this.sel) { const k = this.since(); if (this.sel.k.startsWith('w')) { rrect(g, this.sel.x + (this.sel.k === 'wR' ? -190 : 40), 220, 150, 44, 12, 'rgba(232,215,166,.9)'); txt(g, '"사과…"', this.sel.x + (this.sel.k === 'wR' ? -115 : 115), 249, { size: 17, c: '#1a2529', al: 'center' }); } else fork(g, this.sel.x, this.sel.y, k); } },
+    draw(g) { floor(g, 560); face(this, g, 600, 290, 200, {}); if (this.sel) { const k = this.since(); if (this.sel.k === 'wR' || this.sel.k === 'wL') { rrect(g, this.sel.x + (this.sel.k === 'wR' ? -190 : 40), 220, 150, 44, 12, 'rgba(232,215,166,.9)'); txt(g, '"사과…"', this.sel.x + (this.sel.k === 'wR' ? -115 : 115), 249, { size: 17, c: '#1a2529', al: 'center' }); } else fork(g, this.sel.x, this.sel.y, k); } },
     exam(q) {
       const p = this.p, R = p.R == null ? 1 : p.R, L = p.L == null ? 1 : p.L, type = p.type || 'sn', k = q.k;
-      if (k[0] === 'w') { const v = k === 'wR' ? R : L; return { say: v >= 0.9 ? '사과요.' : v >= 0.55 ? '네? …사과요?' : '뭐라고요? 잘 안 들려요.' }; }
+      if (k === 'wR' || k === 'wL') { const v = k === 'wR' ? R : L; return { say: v >= 0.9 ? '사과요.' : v >= 0.55 ? '네? …사과요?' : '뭐라고요? 잘 안 들려요.' }; }
       if (k === 'weber') {
         if (Math.abs(R - L) < 0.15) return { say: '가운데서 똑같이 들려요.' };
         const worse = R < L ? 'R' : 'L', better = worse === 'R' ? 'L' : 'R', side = type === 'sn' ? better : worse;
