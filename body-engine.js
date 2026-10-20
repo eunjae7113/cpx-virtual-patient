@@ -1,6 +1,7 @@
 /* 전신 진찰 엔진 (Canvas 2D + Web Audio, 외부 라이브러리 없음) — 기본판
  * 몸 앞모습 그림 위 청진·타진·촉진 지점을 누르면 소리(심음·호흡음·장음·경동맥 잡음·타진음)를 합성해 들려주고,
- * 그 지점의 반응(아파요 등)을 돌려준다. 청진·타진이 없는 항목은 부위 그림 + 진찰 방법만 그림.
+ * 그 지점의 반응(아파요 등)을 돌려준다. 청진·타진이 없는 항목(시진·촉진·신경·인지)은 body-scenes.js 의 장면 그림
+ * (BodyEngine.SCENES[장면] = { pts 진찰 지점, draw 그림, exam 지점 진찰, auto '진찰하기', tick 매 프레임 })이 맡는다.
  * 좌표: 환자 오른쪽(R) = 화면 왼쪽.  파라미터는 tools/body_presets.py 의 장면별 p (BASE 위에 덮어씀)
  */
 (function () {
@@ -24,14 +25,30 @@
   const SOUND_TASKS = ['lung', 'heart', 'carotid', 'bowel', 'perc', 'aperc'];
 
   class BodyEngine {
-    constructor(cv) { this.cv = cv; this.g = cv.getContext('2d'); this.task = 'lung'; this.p = {}; this.sel = null; this.t = 0; this.said = null; this.ac = null; this.node = null; this.av = 'm_m'; }
+    constructor(cv) { this.cv = cv; this.g = cv.getContext('2d'); this.task = 'lung'; this.p = {}; this.sel = null; this.t = 0; this.said = null; this.felt = ''; this.act = null; this.raf = 0; this.ac = null; this.node = null; this.av = 'm_m'; }
     setAvatar(a) { this.av = a || 'm_m'; }
-    setTask(task, p) { this.stop(); this.task = task; this.p = p || {}; this.sel = null; this.draw(); }
-    points() { return (POINTS[this.task] || (() => []))(); }
+    setTask(task, p) { this.stop(); this.task = task; this.p = p || {}; this.sel = null; this.act = null; this.felt = ''; this.said = null; this.draw(); }
+    scene() { return (BodyEngine.SCENES || {})[this.task]; }
+    points() { const sc = this.scene(); return sc && sc.pts ? sc.pts.call(this) : (POINTS[this.task] || (() => []))(); }
+    // 마지막 진찰 동작(k = 지점 키, 'act' = 진찰하기)에서 지난 초. 없으면 아주 큰 수
+    since(k) { return this.act && (k == null || this.act.k === k) ? this.t - this.act.t0 : 1e9; }
+    skin() {
+      const s = { m_m: '#d9a882', f_m: '#e2b391', m_o: '#cf9f7d', f_o: '#d8ab8c', m_y: '#e0b08b', f_y: '#e6bb98', c_m: '#e4b896', c_f: '#e6bb9a', t_m: '#dcac87', t_f: '#e3b590', nb: '#efc4a8' }[this.av] || '#d9a882';
+      return this.tint ? BodyEngine.mix(s, this.tint[0], this.tint[1]) : s;
+    }
+    // '진찰하기' 단추: 장면 전체 동작(부르기·표정 짓기·그림 그리기 등)
+    auto() { const sc = this.scene(); if (!sc || !sc.auto) return null; this.act = { k: 'act', t0: this.t }; const r = sc.auto.call(this) || {}; this.felt = r.felt || ''; this.draw(); return r; }
+    // 애니메이션(숨쉬기·맥박·다리 올리기 등). 화면이 보일 때만 돌림
+    start() { if (this.raf) return; let last = performance.now(); const f = (now) => { this.t += Math.min(0.1, (now - last) / 1000); last = now; this.tick(); this.draw(); this.raf = requestAnimationFrame(f); }; this.raf = requestAnimationFrame(f); }
+    pause() { if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; }
+    advance(s) { for (let i = 0; i < s * 30; i++) { this.t += 1 / 30; this.tick(); } this.draw(); }
+    tick() { const sc = this.scene(); if (sc && sc.tick) sc.tick.call(this); }
     hit(x, y) { return this.points().find(q => Math.hypot(q.x - x, q.y - y) < 28) || null; }
     takeSay() { const s = this.said; this.said = null; return s; }
     // ---- 지점 진찰: 소리 + 반응. 돌려주는 값 = 그 지점에서 듣거나 느낀 것(눈·귀로 알 수 있는 것만, 진단 이름 없음)
     examine(q) {
+      const sc = this.scene();
+      if (sc && sc.exam) { this.sel = q; this.act = { k: q.k, t0: this.t }; const r = sc.exam.call(this, q) || {}; this.said = r.say || null; this.felt = r.felt || ''; this.draw(); return r; }
       this.sel = q; this.draw();
       const p = this.p, t = this.task;
       if (t === 'lung') { const z = Object.assign({ br: 1 }, (p.zones || {})[q.k]); this.play('lung', z); return null; }
@@ -40,7 +57,6 @@
       if (t === 'bowel') { this.play('bowel'); return null; }
       if (t === 'perc') { this.play('perc', (p.zones || {})[q.k] || 'res'); return null; }
       if (t === 'aperc') { const d = (p.dull || []).includes(q.k) || (q.k === 'Supra' && p.bladder); this.play('perc', d ? 'dull' : p.tymp_up ? 'hyper' : 'tymp'); return null; }
-      if (t === 'apalp') { const v = (p.tender || {})[q.k] || 0; if (v >= 0.5) this.said = v >= 0.9 ? '아야! 거기 너무 아파요!' : '아, 거기 좀 아파요.'; return null; }
       return null;
     }
     // ---- Web Audio 합성(8초 반복). 학교 사이트용 녹음 파일 대신 파라미터로 만듦 — 실제 녹음과 다름(교육용 근사)
@@ -143,10 +159,10 @@
     draw() {
       const g = this.g; g.setTransform(1, 0, 0, 1, 0, 0);
       g.fillStyle = '#10171a'; g.fillRect(0, 0, W, H);
-      g.fillStyle = '#18242a'; g.fillRect(0, 470, W, 130);
-      this.body(g);
+      const sc = this.scene();
+      if (sc && sc.draw) { g.save(); sc.draw.call(this, g); g.restore(); } else { g.fillStyle = '#18242a'; g.fillRect(0, 470, W, 130); this.body(g); }
       const pts = this.points();
-      for (const q of pts) {
+      for (const q of (sc && sc.noDots ? [] : pts)) {
         const on = this.sel && this.sel.k === q.k;
         g.beginPath(); g.arc(q.x, q.y, on ? 17 : 12, 0, 7);
         g.fillStyle = on ? 'rgba(232,215,166,.9)' : 'rgba(120,200,190,.35)'; g.fill();
@@ -154,14 +170,26 @@
       }
       if (this.sel && SOUND_TASKS.includes(this.task)) this.stetho(g, this.sel);
       g.fillStyle = '#cfe0dc'; g.font = '600 20px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
-      g.fillText(this.sel ? this.sel.n : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
+      g.fillText(this.sel ? this.sel.n : sc && sc.hint ? sc.hint : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
       if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText('소리가 반복 재생됩니다 · 다른 지점을 누르거나 ■ 멈춤', 28, 68); }
+      if (this.felt) this.feltBox(g, this.felt);
+    }
+    // 손끝·눈으로 확인한 것(진단 이름 없이 느낀 것만)을 화면 아래에
+    feltBox(g, s) {
+      g.font = '16px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
+      const lines = [], maxW = W - 90; let cur = '';
+      for (const ch of s) { if (g.measureText(cur + ch).width > maxW) { lines.push(cur); cur = ch; } else cur += ch; }
+      lines.push(cur);
+      const h = 18 + lines.length * 24, y = H - h - 12;
+      g.fillStyle = 'rgba(8,14,16,.82)'; g.beginPath(); g.roundRect ? g.roundRect(20, y, W - 40, h, 10) : g.rect(20, y, W - 40, h); g.fill();
+      g.fillStyle = '#e8d7a6'; lines.forEach((l, i) => g.fillText(l, 40, y + 28 + i * 24));
     }
     body(g) {
-      const skin = { m_m: '#d9a882', f_m: '#e2b391', m_o: '#cf9f7d', f_o: '#d8ab8c', m_y: '#e0b08b', f_y: '#e6bb98', c_m: '#e4b896', c_f: '#e6bb9a', t_m: '#dcac87', t_f: '#e3b590', nb: '#efc4a8' }[this.av] || '#d9a882';
+      const skin = this.skin();
       g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2;
       // 머리·목·몸통·팔
       g.beginPath(); g.ellipse(CX, 80, 52, 62, 0, 0, 7); g.fill(); g.stroke();
+      if (BodyEngine.draw) { g.restore(); BodyEngine.draw.face(this, g, CX, 80, 62, { hair: true }); g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; }
       g.fillRect(CX - 26, 130, 52, 40);
       g.beginPath(); g.moveTo(CX - 150, 180); g.quadraticCurveTo(CX, 150, CX + 150, 180); g.lineTo(CX + 130, 360); g.quadraticCurveTo(CX + 120, 440, CX + 135, 540);
       g.lineTo(CX - 135, 540); g.quadraticCurveTo(CX - 120, 440, CX - 130, 360); g.closePath(); g.fill(); g.stroke();
@@ -188,5 +216,8 @@
   }
   function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   BodyEngine.SOUND_TASKS = SOUND_TASKS;
+  BodyEngine.W = W; BodyEngine.H = H; BodyEngine.CX = CX; BodyEngine.ABD = ABD; BodyEngine.LUNG = LUNG; BodyEngine.mulberry = mulberry;
+  BodyEngine.mix = (a, b, t) => { const h = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); const A = h(a), B = h(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+  BodyEngine.SCENES = BodyEngine.SCENES || {};
   window.BodyEngine = BodyEngine;
 })();
