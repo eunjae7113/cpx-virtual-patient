@@ -51,8 +51,8 @@
       if (sc && sc.exam) { this.sel = q; this.act = { k: q.k, t0: this.t }; const r = sc.exam.call(this, q) || {}; this.said = r.say || null; this.felt = r.felt || ''; this.draw(); return r; }
       this.sel = q; this.draw();
       const p = this.p, t = this.task;
-      if (t === 'lung') { const z = Object.assign({ br: 1 }, (p.zones || {})[q.k]); this.play('lung', z); return null; }
-      if (t === 'heart') { this.play('heart', q.k); return null; }
+      if (t === 'lung') { const z = Object.assign({ br: 1 }, (p.zones || {})[q.k]); if (!this.playClip(this.clipFor('lung', q.k, z))) this.play('lung', z); this.draw(); return null; }
+      if (t === 'heart') { if (!this.playClip(this.clipFor('heart', q.k))) this.play('heart', q.k); this.draw(); return null; }
       if (t === 'carotid') { this.play('carotid', q.k); return null; }
       if (t === 'bowel') { this.play('bowel'); return null; }
       if (t === 'perc') { this.play('perc', (p.zones || {})[q.k] || 'res'); return null; }
@@ -61,7 +61,36 @@
     }
     // ---- Web Audio 합성(8초 반복). 학교 사이트용 녹음 파일 대신 파라미터로 만듦 — 실제 녹음과 다름(교육용 근사)
     ctx() { if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)(); if (this.ac.state === 'suspended') this.ac.resume(); return this.ac; }
-    stop() { if (this.node) { try { this.node.stop(); } catch (e) { } this.node = null; } }
+    stop() { if (this.node) { try { this.node.stop(); } catch (e) { } this.node = null; } if (this.audio) { this.audio.pause(); this.audio = null; } this.clip = null; }
+    // ---- 실제 녹음(공개 청진음 HLS-CMDS, CC BY 4.0, tools/sound_lib.py). 소견에 맞는 녹음이 없으면 null → 합성음
+    // 녹음이 있는 소리: 정상 심음·수축기 잡음(중기)·이완기 잡음(후기)·S3·S4·심방세동·빈맥 / 정상 호흡음·천명음·가는·굵은 수포음·흉막 마찰음
+    clipFor(kind, k, z) {
+      const L = (BodyEngine.CLIPS || {})[kind]; if (!L) return null;
+      const p = this.p; let code, vol = 1;
+      if (kind === 'heart') {
+        if (p.muffle || p.rub || p.snap || p.loudP2 || p.s1var) return null;          // 녹음에 없는 특징
+        const m = p.mur, hr = p.hr || 72;
+        if (m) code = { sem: 'MSM', flow: 'MSM', mdm: 'LDM' }[m.t];
+        else if (p.s3) code = 'S3'; else if (p.s4) code = 'S4'; else if (p.irr) code = 'AF';
+        else if (hr >= 100) code = 'T'; else if (hr >= 56) code = 'N';
+        if (m && m.t === 'flow') vol = 0.7;
+      } else {
+        if (p.stridor || z.bronch) return null;
+        code = z.cr === 'fine' ? 'FC' : z.cr ? 'CC' : z.wh ? 'W' : z.rub ? 'PR' : z.rh ? 'R' : 'N';
+        vol = Math.max(0.06, Math.min(1, z.br == null ? 1 : z.br));                  // 호흡음 감소 = 소리 줄임
+      }
+      const d = code && L[code]; if (!d) return null;
+      // 그 자리 녹음이 없으면 가장 가까운 자리
+      const P = kind === 'heart' ? { A: [572, 232], P: [628, 232], E: [628, 270], T: [612, 305], M: [668, 318] } : LUNG, me = P[k] || [600, 260];
+      const at = Object.keys(d).sort((a, b) => Math.hypot(P[a][0] - me[0], P[a][1] - me[1]) - Math.hypot(P[b][0] - me[0], P[b][1] - me[1]))[0];
+      return Object.assign({ vol }, d[at]);
+    }
+    playClip(c) {
+      if (!c) return false;
+      this.stop();
+      const a = new Audio(c.src); a.loop = true; a.volume = c.vol; a.play().catch(() => { });
+      this.audio = a; this.clip = c; return true;
+    }
     play(kind, arg) {
       const ac = this.ctx(); this.stop();
       const sr = ac.sampleRate, n = sr * 8, buf = ac.createBuffer(1, n, sr), d = buf.getChannelData(0);
@@ -171,7 +200,7 @@
       if (this.sel && SOUND_TASKS.includes(this.task)) this.stetho(g, this.sel);
       g.fillStyle = '#cfe0dc'; g.font = '600 20px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
       g.fillText(this.sel ? this.sel.n : sc && sc.hint ? sc.hint : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
-      if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText('소리가 반복 재생됩니다 · 다른 지점을 누르거나 ■ 멈춤', 28, 68); }
+      if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText('소리가 반복 재생됩니다 · ■ 멈춤', 28, 68); g.fillText(this.clip ? '실제 녹음(마네킹) · HLS-CMDS, CC BY 4.0' : '합성음(교육용 근사)', 28, 88); }
       if (this.felt) this.feltBox(g, this.felt);
     }
     // 손끝·눈으로 확인한 것(진단 이름 없이 느낀 것만)을 화면 아래에
