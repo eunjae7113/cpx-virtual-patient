@@ -253,10 +253,21 @@
     note(g, '앞', 930, 380);
   }
   S.head = { pts() { return []; }, draw(g) { headBase(this, g); }, hint: '머리·얼굴·두피를 살펴보세요' };
+  // tender: 'R' | 'L' | 'top' | 'occ' 하나 또는 배열(긴장성 두통처럼 여러 곳)
+  const tenderAt = (p, k) => Array.isArray(p.tender) ? p.tender.includes(k) : p.tender === k;
   S.headp = {
-    pts() { return [{ k: 'R', x: 280, y: 230, n: '오른쪽 옆머리 누르기' }, { k: 'L', x: 580, y: 230, n: '왼쪽 옆머리 누르기' }, { k: 'top', x: 430, y: 110, n: '정수리 누르기' }]; },
-    draw(g) { headBase(this, g); const p = this.p; for (const [k, d] of SIDES) if (p.swell === k) ell(g, 430 + d * 140, 215, 38, 30, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.25)'); },
-    exam(q) { const p = this.p, hit = p.tender === q.k; return { say: hit ? '아야! 거기 누르면 아파요.' : '', felt: [p.swell === q.k ? '말랑하게 부어 있음' : '', p.warm ? '두피가 따뜻하게 느껴짐' : '', hit ? '누르면 아파함' : ''].filter(Boolean).join(', ') || '누를 때 아파하지 않고 종물·함몰이 없음.' }; },
+    pts() { return [{ k: 'R', x: 280, y: 230, n: '오른쪽 옆머리 누르기' }, { k: 'L', x: 580, y: 230, n: '왼쪽 옆머리 누르기' }, { k: 'top', x: 430, y: 110, n: '정수리 누르기' }, { k: 'occ', x: 130, y: 345, n: '뒷머리(목덜미 위) 누르기' }]; },
+    draw(g) {
+      headBase(this, g); const p = this.p;
+      for (const [k, d] of SIDES) if (p.swell === k) ell(g, 430 + d * 140, 215, 38, 30, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.25)');
+      // 뒤에서 본 머리(작은 그림): 뒷머리·목덜미
+      inset(g, 130, 300, 105, '뒤에서 본 머리');
+      const sk = this.skin(); rrect(g, 105, 330, 50, 62, 12, sk, LINE); ell(g, 130, 290, 64, 76, sk, LINE);
+      g.save(); g.beginPath(); g.ellipse(130, 290, 64, 76, 0, 0, 7); g.clip(); ell(g, 130, 262, 80, 80, '#2b221d'); g.restore();
+      for (const d of [-1, 1]) ell(g, 130 + d * 66, 300, 9, 17, sk, LINE);
+      if (this.sel) { finger(g, this.sel.x, this.sel.y, ease(this.since() / 0.4)); }
+    },
+    exam(q) { const p = this.p, hit = tenderAt(p, q.k); return { say: hit ? (Array.isArray(p.tender) ? '아… 거기 누르면 뻐근하게 아파요.' : '아야! 거기 누르면 아파요.') : '', felt: [p.swell === q.k ? '말랑하게 부어 있음' : '', p.warm ? '두피가 따뜻하게 느껴짐' : '', hit ? (Array.isArray(p.tender) ? '깊이 누르면 근육이 뭉친 듯하고 아파함' : '누르면 아파함') : ''].filter(Boolean).join(', ') || '누를 때 아파하지 않고 종물·함몰이 없음.' }; },
   };
 
   // ================================================================ 귀·이경·코
@@ -1035,6 +1046,7 @@
       case 'stocking': return ['dorsum', 'sole'].includes(part);
       case 'L5_L': return s === 'L' && ['calfL', 'dorsum'].includes(part);
       case 'S1_L': return s === 'L' && part === 'sole';
+      case 'S1_B': return part === 'sole';
       case 'foot_R': return s === 'R' && ['dorsum', 'sole'].includes(part);
       case 'peroneal_R': return s === 'R' && ['calfL', 'dorsum'].includes(part);
       case 'level_T10': return leg || part === 'below' || part === 'saddle';
