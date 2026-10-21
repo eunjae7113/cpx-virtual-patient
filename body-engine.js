@@ -61,7 +61,9 @@
       return null;
     }
     // ---- Web Audio 합성(8초 반복). 학교 사이트용 녹음 파일 대신 파라미터로 만듦 — 실제 녹음과 다름(교육용 근사)
-    ctx() { if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)(); if (this.ac.state === 'suspended') this.ac.resume(); return this.ac; }
+    ctx() { if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)(); if (this.ac.state === 'suspended' && !BodyEngine.muted) this.ac.resume(); else if (BodyEngine.muted && this.ac.state === 'running') this.ac.suspend(); return this.ac; }
+    // 소리 끄기(머리줄 🔊 단추, 모든 진찰실 공통): 합성음은 오디오 장치를 멈추고 녹음은 음소거 — 다시 켜면 이어서 들림
+    setMuted(v) { BodyEngine.muted = v; if (this.ac) { if (v) this.ac.suspend(); else this.ac.resume(); } if (this.audio) this.audio.muted = v; if (this.task) this.draw(); }
     stop() { if (this.node) { try { this.node.stop(); } catch (e) { } this.node = null; } if (this.audio) { this.audio.pause(); this.audio = null; } this.clip = null; }
     // ---- 실제 녹음(공개 청진음 HLS-CMDS, CC BY 4.0, tools/sound_lib.py). 소견에 맞는 녹음이 없으면 null → 합성음
     // 녹음이 있는 소리: 정상 심음·수축기 잡음(중기)·이완기 잡음(후기)·S3·S4·심방세동·빈맥 / 정상 호흡음·천명음·가는·굵은 수포음·흉막 마찰음
@@ -89,7 +91,7 @@
     playClip(c) {
       if (!c) return false;
       this.stop();
-      const a = new Audio(c.src); a.loop = true; a.volume = c.vol; a.play().catch(() => { });
+      const a = new Audio(c.src); a.loop = true; a.volume = c.vol; a.muted = !!BodyEngine.muted; a.play().catch(() => { });
       this.audio = a; this.clip = c; return true;
     }
     play(kind, arg) {
@@ -201,7 +203,7 @@
       if (this.sel && SOUND_TASKS.includes(this.task)) this.stetho(g, this.sel);
       g.fillStyle = '#cfe0dc'; g.font = '600 20px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
       g.fillText(this.sel ? this.sel.n : sc && sc.hint ? sc.hint : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
-      if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText('소리가 반복 재생됩니다 · ■ 멈춤', 28, 68); g.fillText(this.clip ? '실제 녹음(마네킹) · HLS-CMDS, CC BY 4.0' : '합성음(교육용 근사)', 28, 88); }
+      if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText(BodyEngine.muted ? '소리 꺼짐 — 위쪽 🔇 단추로 켜기' : '소리가 반복 재생됩니다 · ■ 멈춤', 28, 68); g.fillText(this.clip ? '실제 녹음(마네킹) · HLS-CMDS, CC BY 4.0' : '합성음(교육용 근사)', 28, 88); }
       if (this.felt) this.feltBox(g, this.felt);
     }
     // 손끝·눈으로 확인한 것(진단 이름 없이 느낀 것만)을 화면 아래에
