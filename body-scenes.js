@@ -39,13 +39,23 @@
   // ---- 얼굴(앞모습). o: eR/eL 눈 뜬 정도 0~1, bR/bL 눈썹 올림, mR/mL 입꼬리(+위), open 입 벌림, teeth, pursed, gx/gy 시선,
   //      wide 얼굴 폭, cyan 입술 청색, puffy 눈 부기, parR/parL 이하선 부기, flatR/flatL 코입술 주름 없음, flare 콧볼 벌렁임
   function face(e, g, cx, cy, s, o = {}) {
-    const sk = o.skin || e.skin(), wide = o.wide || 1;
+    const sk = o.skin || e.skin(), wide = o.wide || 1, L = e.look(), hairC = o.hairC || L.hair;
+    // 긴 머리(여성)는 얼굴 뒤에 먼저
+    if (L.long && o.hair !== false) { g.fillStyle = hairC; g.beginPath(); g.ellipse(cx, cy + 0.15 * s, 0.98 * s * wide, 1.12 * s, 0, 0, 7); g.fill(); g.fillRect(cx - 0.98 * s * wide, cy + 0.15 * s, 1.96 * s * wide, 0.75 * s); }
     for (const d of [-1, 1]) ell(g, cx + d * 0.79 * s * wide, cy + 0.02 * s, 0.12 * s, 0.21 * s, sk, LINE);
     for (const d of [-1, 1]) { const v = d < 0 ? o.parR : o.parL; if (v) ell(g, cx + d * 0.7 * s * wide, cy + 0.34 * s, 0.22 * s * v, 0.27 * s * v, mix(sk, '#c98a7a', 0.15), LINE); }
     ell(g, cx, cy, 0.78 * s * wide, s, sk, LINE);
     if (o.hair !== false) {
       g.save(); g.beginPath(); g.ellipse(cx, cy, 0.78 * s * wide, s, 0, 0, 7); g.clip();
-      g.fillStyle = o.hairC || '#2b221d'; g.beginPath(); g.ellipse(cx, cy - 0.86 * s, 0.95 * s * wide, 0.44 * s, 0, 0, 7); g.fill(); g.restore();
+      g.fillStyle = hairC; g.beginPath(); g.ellipse(cx, cy - 0.86 * s, 0.95 * s * wide, L.long ? 0.5 * s : 0.44 * s, 0, 0, 7); g.fill();
+      if (L.long) for (const d of [-1, 1]) { g.beginPath(); g.ellipse(cx + d * 0.72 * s * wide, cy - 0.2 * s, 0.16 * s, 0.6 * s, d * 0.15, 0, 7); g.fill(); }
+      g.restore();
+    }
+    // 나이 든 얼굴: 이마·눈가 주름
+    if (L.age === 's' || L.age === 'e') {
+      g.strokeStyle = `rgba(90,50,30,${L.age === 'e' ? 0.3 : 0.18})`; g.lineWidth = 1.5;
+      for (let i = 0; i < (L.age === 'e' ? 3 : 2); i++) { g.beginPath(); g.moveTo(cx - 0.3 * s, cy - (0.5 + i * 0.07) * s); g.quadraticCurveTo(cx, cy - (0.54 + i * 0.07) * s, cx + 0.3 * s, cy - (0.5 + i * 0.07) * s); g.stroke(); }
+      for (const d of [-1, 1]) for (let i = 0; i < 2; i++) { g.beginPath(); g.moveTo(cx + d * 0.5 * s, cy - (0.1 - i * 0.06) * s); g.lineTo(cx + d * 0.58 * s, cy - (0.13 - i * 0.1) * s); g.stroke(); }
     }
     for (const d of [-1, 1]) {
       const r = d < 0 ? (o.bR || 0) : (o.bL || 0);
@@ -62,7 +72,7 @@
         g.restore(); g.strokeStyle = '#3a2a22'; g.lineWidth = 2; g.beginPath(); g.ellipse(ex, ey, rx, ry, 0, Math.PI, 2 * Math.PI); g.stroke();
       }
       const br = d < 0 ? (o.bR || 0) : (o.bL || 0), by = ey - 0.17 * s - br * 0.07 * s;
-      g.strokeStyle = o.hairC || '#2b221d'; g.lineWidth = 0.035 * s; g.lineCap = 'round';
+      g.strokeStyle = hairC; g.lineWidth = 0.035 * s; g.lineCap = 'round';
       g.beginPath(); g.moveTo(ex - d * 0.15 * s, by + 0.02 * s); g.quadraticCurveTo(ex, by - 0.04 * s, ex + d * 0.17 * s, by + 0.01 * s); g.stroke();
     }
     g.strokeStyle = 'rgba(90,50,30,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 0.02 * s, cy - 0.02 * s); g.quadraticCurveTo(cx - 0.1 * s, cy + 0.2 * s, cx - 0.06 * s, cy + 0.24 * s); g.quadraticCurveTo(cx, cy + 0.27 * s, cx + 0.07 * s, cy + 0.24 * s); g.stroke();
@@ -85,22 +95,86 @@
     if (o.drool) { g.fillStyle = 'rgba(220,235,245,.7)'; g.beginPath(); g.moveTo(cx + 0.1 * s, my + 0.04 * s); g.quadraticCurveTo(cx + 0.14 * s, my + 0.25 * s, cx + 0.1 * s, my + 0.3 * s); g.quadraticCurveTo(cx + 0.06 * s, my + 0.22 * s, cx + 0.08 * s, my + 0.04 * s); g.fill(); }
   }
 
+  // 굵기가 점점 바뀌는 팔다리(마디마다 굵기 ws[i]). 관절은 둥글게 이어 붙임
+  function taper(g, pts, ws, col) {
+    // 마디 사다리꼴·관절 원을 하나씩 칠함(한 경로로 그리면 겹친 곳이 지워짐). 먼저 조금 크게 어둡게 → 테두리
+    const draw = (add, fill) => {
+      g.fillStyle = fill;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x0, y0] = pts[i], [x1, y1] = pts[i + 1], dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, a = ws[i] / 2 + add, b = ws[i + 1] / 2 + add;
+        g.beginPath(); g.moveTo(x0 + nx * a, y0 + ny * a); g.lineTo(x1 + nx * b, y1 + ny * b); g.lineTo(x1 - nx * b, y1 - ny * b); g.lineTo(x0 - nx * a, y0 - ny * a); g.closePath(); g.fill();
+      }
+      pts.forEach(([x, y], i) => { g.beginPath(); g.arc(x, y, ws[i] / 2 + add, 0, 7); g.fill(); });
+    };
+    draw(2, 'rgba(0,0,0,.35)'); draw(0, col);
+  }
+  // 발 모양(발바닥 또는 위에서 본 발). m = 엄지발가락 쪽(화면 -1 왼쪽 / +1 오른쪽). 발가락은 엄지부터 점점 작게
+  function footShape(g, x, y, rx, ry, m, sk, o = {}) {
+    const P = [[0, 1], [-m * 0.62, 0.72], [-m * 0.82, 0.05], [-m * 0.92, -0.55], [-m * 0.72, -0.93], [m * 0.1, -1.0], [m * 0.8, -0.92], [m * 0.98, -0.5], [m * 0.42, 0.12], [m * 0.6, 0.72]].map(([a, b]) => [x + a * rx, y + b * ry]);
+    const mid = (i) => [(P[i][0] + P[(i + 1) % P.length][0]) / 2, (P[i][1] + P[(i + 1) % P.length][1]) / 2];
+    const toes = [];
+    for (let i = 0; i < 5; i++) {
+      const tx = x + m * (0.55 - i * 0.27) * rx, ty = y - ry * (1.0 - (i === 0 ? 0 : 0.04 + i * 0.05)) - (i === 0 ? 0.08 : 0.04) * ry, tr = [0.27, 0.19, 0.17, 0.155, 0.14][i] * rx;
+      ell(g, tx, ty, tr, tr * 1.2, sk, LINE); toes.push([tx, ty, tr]);
+    }
+    g.beginPath(); let q = mid(P.length - 1); g.moveTo(q[0], q[1]);
+    for (let i = 0; i < P.length; i++) { const n = mid(i); g.quadraticCurveTo(P[i][0], P[i][1], n[0], n[1]); }
+    g.closePath(); g.fillStyle = sk; g.fill(); g.strokeStyle = LINE; g.lineWidth = 2; g.stroke();
+    if (o.sole) { const gr = g.createRadialGradient(x - m * 0.2 * rx, y + 0.1 * ry, 5, x, y, rx); gr.addColorStop(0, 'rgba(255,255,255,.12)'); gr.addColorStop(1, 'rgba(0,0,0,.05)'); g.fillStyle = gr; g.fill(); }
+    else for (const [tx, ty, tr] of toes) { g.fillStyle = 'rgba(255,240,230,.55)'; g.beginPath(); g.ellipse(tx, ty - tr * 0.45, tr * 0.55, tr * 0.45, 0, 0, 7); g.fill(); }   // 발톱
+    return toes;
+  }
   // ---- 서 있는 몸 전체(앞모습). 관절 위치를 돌려줌. o: legR 다리 짧음, varus 무릎 휨, footOutR 발 바깥돌림, armOut 팔 벌림
+  //      외형(성별·나이)에 따라 어깨·엉덩이 폭, 머리 크기, 머리 모양이 바뀜(관절 위치는 같게 — 진찰 지점 좌표가 그대로 맞도록)
   function figure(e, g, cx, top, h, o = {}) {
-    const sk = e.skin(), u = h / 100, J = {};
+    const sk = e.skin(), u = h / 100, J = {}, L = e.look(), f = L.sex === 'f', kid = L.age === 'c' || L.age === 'nb';
     for (const [k, d] of SIDES) {
       const sx = cx + d * 13 * u, sy = top + 18 * u, ao = o.armOut || 0;
       J['shoulder_' + k] = [sx, sy]; J['elbow_' + k] = [cx + d * (16 + ao * 5) * u, top + 34 * u]; J['wrist_' + k] = [cx + d * (18 + ao * 9) * u, top + 48 * u]; J['hand_' + k] = [cx + d * (19 + ao * 10) * u, top + 53 * u];
       const short = k === 'R' && o.legR ? o.legR * u : 0, vr = o.varus ? 2.2 * u : 0;
       J['hip_' + k] = [cx + d * 7 * u, top + 52 * u]; J['knee_' + k] = [cx + d * (7.5 * u + vr), top + 73 * u - short * 0.5]; J['ankle_' + k] = [cx + d * 7 * u, top + 94 * u - short]; J['foot_' + k] = [cx + d * (7 + (k === 'R' && o.footOutR ? 4 : 1.5)) * u, top + 98 * u - short];
     }
-    for (const [k] of SIDES) { limb(g, [J['hip_' + k], J['knee_' + k], J['ankle_' + k]], 8 * u, sk); limb(g, [J['ankle_' + k], J['foot_' + k]], 4.5 * u, sk); }
-    g.fillStyle = '#5f7f9a'; g.beginPath(); g.moveTo(cx - 12 * u, top + 47 * u); g.lineTo(cx + 12 * u, top + 47 * u); g.lineTo(cx + 13 * u, top + 60 * u); g.lineTo(cx + 1.5 * u, top + 60 * u); g.lineTo(cx, top + 56 * u); g.lineTo(cx - 1.5 * u, top + 60 * u); g.lineTo(cx - 13 * u, top + 60 * u); g.closePath(); g.fill();
-    g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 14 * u, top + 17 * u); g.quadraticCurveTo(cx, top + 15 * u, cx + 14 * u, top + 17 * u); g.lineTo(cx + 11 * u, top + 48 * u); g.lineTo(cx - 11 * u, top + 48 * u); g.closePath(); g.fill(); g.stroke();
-    for (const [k] of SIDES) { limb(g, [J['shoulder_' + k], J['elbow_' + k], J['wrist_' + k]], 6 * u, sk); ell(g, J['hand_' + k][0], J['hand_' + k][1], 2.6 * u, 3.6 * u, sk, LINE); }
-    g.fillStyle = sk; g.fillRect(cx - 3 * u, top + 11 * u, 6 * u, 6 * u);
-    ell(g, cx, top + 6.5 * u, 6 * u, 7 * u, sk, LINE);
-    g.fillStyle = '#2b221d'; g.beginPath(); g.ellipse(cx, top + 3.5 * u, 6.2 * u, 4.2 * u, 0, Math.PI, 2 * Math.PI); g.fill();
+    // 다리: 허벅지 → 무릎 → 종아리(볼록) → 발목 → 발(앞에서 본 모양)
+    for (const [k, d] of SIDES) {
+      const hp = J['hip_' + k], kn = J['knee_' + k], an = J['ankle_' + k], calf = [kn[0] + (an[0] - kn[0]) * 0.3 + d * 0.6 * u, kn[1] + (an[1] - kn[1]) * 0.3];
+      taper(g, [[hp[0] - d * 1 * u, hp[1]], kn, calf, an], [(f ? 11.5 : 10.5) * u, 6.6 * u, 7 * u, 4.2 * u], sk);
+      g.strokeStyle = 'rgba(90,50,30,.22)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(kn[0], kn[1] - 0.5 * u, 2.4 * u, 2.8 * u, 0, 0, 7); g.stroke();   // 무릎뼈
+      const ft = J['foot_' + k];
+      g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath();
+      g.moveTo(an[0] - 2.1 * u, an[1]); g.quadraticCurveTo(an[0] - 2.6 * u, ft[1] + 1.2 * u, ft[0] - 3 * u, ft[1] + 1.4 * u); g.lineTo(ft[0] + 3 * u, ft[1] + 1.4 * u); g.quadraticCurveTo(an[0] + 2.8 * u, ft[1], an[0] + 2.1 * u, an[1]); g.closePath(); g.fill(); g.stroke();
+    }
+    // 반바지
+    const hw = f ? 13.5 : 12.5;
+    g.fillStyle = '#5f7f9a'; g.beginPath(); g.moveTo(cx - (hw - 0.5) * u, top + 46 * u); g.lineTo(cx + (hw - 0.5) * u, top + 46 * u); g.lineTo(cx + (hw + 0.8) * u, top + 60 * u); g.lineTo(cx + 1.5 * u, top + 60 * u); g.lineTo(cx, top + 56 * u); g.lineTo(cx - 1.5 * u, top + 60 * u); g.lineTo(cx - (hw + 0.8) * u, top + 60 * u); g.closePath(); g.fill();
+    // 몸통: 목 → 어깨(경사) → 가슴 → 허리 → 골반
+    const sw = kid ? 12 : f ? 12.2 : 14, ww = f ? 9.2 : kid ? 10.5 : 10.8;
+    g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath();
+    g.moveTo(cx - 3 * u, top + 14.5 * u); g.quadraticCurveTo(cx - 8 * u, top + 16 * u, cx - sw * u, top + 18 * u);
+    g.quadraticCurveTo(cx - (sw + 0.8) * u, top + 24 * u, cx - (sw - 2) * u, top + 30 * u); g.quadraticCurveTo(cx - ww * u, top + 38 * u, cx - ww * u, top + 41 * u); g.quadraticCurveTo(cx - (hw - 0.3) * u, top + 44 * u, cx - (hw - 0.5) * u, top + 47 * u);
+    g.lineTo(cx + (hw - 0.5) * u, top + 47 * u); g.quadraticCurveTo(cx + (hw - 0.3) * u, top + 44 * u, cx + ww * u, top + 41 * u); g.quadraticCurveTo(cx + ww * u, top + 38 * u, cx + (sw - 2) * u, top + 30 * u);
+    g.quadraticCurveTo(cx + (sw + 0.8) * u, top + 24 * u, cx + sw * u, top + 18 * u); g.quadraticCurveTo(cx + 8 * u, top + 16 * u, cx + 3 * u, top + 14.5 * u); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#5f7f9a'; g.fillRect(cx - (hw - 0.4) * u, top + 46 * u, 2 * (hw - 0.4) * u, 2 * u);
+    // 쇄골·가슴·배꼽(희미하게)
+    g.strokeStyle = 'rgba(90,50,30,.22)'; g.lineWidth = 1.5;
+    for (const d of [-1, 1]) { g.beginPath(); g.moveTo(cx + d * 1.5 * u, top + 17.5 * u); g.quadraticCurveTo(cx + d * 6 * u, top + 17 * u, cx + d * (sw - 2.5) * u, top + 18.5 * u); g.stroke(); }
+    if (f && !kid) {
+      g.fillStyle = '#7d9bb4'; g.beginPath(); g.moveTo(cx - (sw - 2.2) * u, top + 20 * u); g.quadraticCurveTo(cx, top + 18.5 * u, cx + (sw - 2.2) * u, top + 20 * u); g.lineTo(cx + (ww + 0.2) * u, top + 36 * u); g.lineTo(cx - (ww + 0.2) * u, top + 36 * u); g.closePath(); g.fill();   // 환자복 상의
+      g.strokeStyle = 'rgba(0,0,0,.15)'; g.beginPath(); g.moveTo(cx, top + 21 * u); g.lineTo(cx, top + 35 * u); g.stroke();
+    } else if (!kid) { for (const d of [-1, 1]) { g.beginPath(); g.moveTo(cx + d * 1 * u, top + 27 * u); g.quadraticCurveTo(cx + d * 5 * u, top + 28.5 * u, cx + d * 9 * u, top + 26 * u); g.stroke(); } }
+    g.fillStyle = 'rgba(120,60,40,.35)'; g.beginPath(); g.arc(cx, top + 41 * u, 0.6 * u, 0, 7); g.fill();
+    // 팔: 어깨(둥근 삼각근) → 팔꿈치 → 아래팔(볼록) → 손목, 엄지는 몸 쪽
+    for (const [k, d] of SIDES) {
+      const s0 = J['shoulder_' + k], el = J['elbow_' + k], wr = J['wrist_' + k], hd = J['hand_' + k];
+      const fa = [el[0] + (wr[0] - el[0]) * 0.3, el[1] + (wr[1] - el[1]) * 0.3];
+      taper(g, [[s0[0] - d * 0.5 * u, s0[1] + 1 * u], el, fa, wr], [(f || kid ? 5.6 : 6.6) * u, 4.4 * u, 4.8 * u, 3.2 * u], sk);
+      ell(g, hd[0] - d * 2 * u, hd[1] - 0.8 * u, 0.9 * u, 1.8 * u, sk, LINE);   // 엄지
+      ell(g, hd[0], hd[1], 2.4 * u, 3.4 * u, sk, LINE);
+      g.strokeStyle = 'rgba(90,50,30,.25)'; g.lineWidth = 1; for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(hd[0] + (i - 1) * 0.8 * u + d * 0.4 * u, hd[1] + 1.2 * u); g.lineTo(hd[0] + (i - 1) * 0.8 * u + d * 0.4 * u, hd[1] + 3.2 * u); g.stroke(); }
+    }
+    // 목·머리(얼굴은 face 를 작게)
+    const hs = kid ? 1.12 : 1;
+    g.fillStyle = sk; g.fillRect(cx - 2.6 * u, top + 11 * u, 5.2 * u, 5 * u); g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 2.6 * u, top + 12 * u); g.lineTo(cx - 2.6 * u, top + 15 * u); g.moveTo(cx + 2.6 * u, top + 12 * u); g.lineTo(cx + 2.6 * u, top + 15 * u); g.stroke();
+    face(e, g, cx, top + 6.5 * u, 6.9 * u * hs, { wide: 0.88 });
     J.top = top; J.u = u; J.cx = cx;
     return J;
   }
@@ -142,7 +216,7 @@
     g.fillStyle = '#5f7f9a'; rrect(g, 520, by - 95, 120, 90, 30, '#5f7f9a');
     const nk = (a.neck || 0) * Math.PI / 180, nb = [305, by - 55], hc = [nb[0] - Math.cos(nk) * 70, nb[1] - Math.sin(nk) * 70];
     limb(g, [nb, [nb[0] - Math.cos(nk) * 30, nb[1] - Math.sin(nk) * 30]], 34, sk);
-    ell(g, hc[0], hc[1], 52, 46, sk, LINE); g.fillStyle = '#2b221d'; g.beginPath(); g.arc(hc[0] - 8, hc[1] + 4, 46, Math.PI * 0.45 + nk, Math.PI * 1.3 + nk); g.fill();
+    ell(g, hc[0], hc[1], 52, 46, sk, LINE); g.fillStyle = e.look().hair; g.beginPath(); g.arc(hc[0] - 8, hc[1] + 4, 46, Math.PI * 0.45 + nk, Math.PI * 1.3 + nk); g.fill();
     ell(g, hc[0] + Math.cos(nk) * 14 - Math.sin(nk) * 22, hc[1] - 22 + Math.sin(nk) * 14, 5, 3, '#3a2a22');
     const near = leg(a.hipN || 0, a.kneeN || 0, false);
     return { hip, hc, ...near };
@@ -155,7 +229,7 @@
   }
 
   // 공용으로 다른 장면에서도 씀
-  BE.draw = { ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor };
+  BE.draw = { ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
 
   // ================================================================ 의식
   const EYE0 = { alert: 1, confused: 1, drowsy: 0.3, stupor: 0, coma: 0 };
@@ -223,7 +297,7 @@
       const sk = this.skin(), a = this.p.g || 0;
       floor(g, 520); g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2;
       g.beginPath(); g.moveTo(300, 600); g.quadraticCurveTo(320, 330, 520, 300); g.lineTo(680, 300); g.quadraticCurveTo(880, 330, 900, 600); g.closePath(); g.fill(); g.stroke();
-      g.fillRect(530, 200, 140, 120); ell(g, 600, 150, 110, 120, '#2b221d', LINE);
+      g.fillRect(530, 200, 140, 120); ell(g, 600, 150, 110, 120, this.look().hair, LINE);
       if (a) { const grd = g.createLinearGradient(0, 220, 0, 320); grd.addColorStop(0, 'rgba(60,40,30,0)'); grd.addColorStop(0.4, `rgba(60,40,30,${0.6 * a})`); grd.addColorStop(1, `rgba(60,40,30,${0.3 * a})`); g.fillStyle = grd; g.fillRect(530, 220, 140, 100); g.strokeStyle = `rgba(40,25,20,${0.4 * a})`; g.lineWidth = 1; for (let y = 240; y < 315; y += 7) { g.beginPath(); g.moveTo(535, y); g.quadraticCurveTo(600, y + 3, 665, y); g.stroke(); } }
       inset(g, 960, 330, 110, '겨드랑이 확대');
       g.save(); g.beginPath(); g.arc(960, 330, 108, 0, 7); g.clip(); g.fillStyle = sk; g.fillRect(850, 220, 220, 220); g.strokeStyle = LINE; g.beginPath(); g.moveTo(880, 260); g.quadraticCurveTo(960, 360, 1040, 260); g.stroke();
@@ -244,12 +318,12 @@
     }
     inset(g, 930, 190, 120, '머리카락·두피 확대');
     g.save(); g.beginPath(); g.arc(930, 190, 118, 0, 7); g.clip(); g.fillStyle = mix(e.skin(), '#f0e0d0', 0.3); g.fillRect(800, 60, 260, 260);
-    g.strokeStyle = '#2b221d'; g.lineWidth = 3; for (let i = 0; i < 14; i++) { const x = 820 + i * 17; g.beginPath(); g.moveTo(x, 320); g.quadraticCurveTo(x + 20, 190, x - 5, 60); g.stroke(); }
+    g.strokeStyle = e.look().hair; g.lineWidth = 3; for (let i = 0; i < 14; i++) { const x = 820 + i * 17; g.beginPath(); g.moveTo(x, 320); g.quadraticCurveTo(x + 20, 190, x - 5, 60); g.stroke(); }
     if (p.lice) { for (let i = 0; i < 16; i++) { const x = 825 + rnd() * 230, y = 90 + rnd() * 200; ell(g, x, y, 5, 3, '#ece6d6', 'rgba(0,0,0,.3)', 1); } }
     if (p.scratch) { g.strokeStyle = 'rgba(170,40,40,.7)'; g.lineWidth = 2; for (let i = 0; i < 5; i++) { const x = 850 + rnd() * 150, y = 120 + rnd() * 150; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 30, y + 22); g.stroke(); } }
     g.restore();
     inset(g, 930, 450, 80, '위에서 본 머리 모양');
-    g.fillStyle = '#2b221d'; g.beginPath(); if (p.flat) { g.moveTo(870, 420); g.quadraticCurveTo(930, 340, 990, 420); g.lineTo(985, 490); g.lineTo(875, 490); g.closePath(); } else g.ellipse(930, 452, 52 * big, 64 * big, 0, 0, 7); g.fill();
+    g.fillStyle = e.look().hair; g.beginPath(); if (p.flat) { g.moveTo(870, 420); g.quadraticCurveTo(930, 340, 990, 420); g.lineTo(985, 490); g.lineTo(875, 490); g.closePath(); } else g.ellipse(930, 452, 52 * big, 64 * big, 0, 0, 7); g.fill();
     note(g, '앞', 930, 380);
   }
   S.head = { pts() { return []; }, draw(g) { headBase(this, g); }, hint: '머리·얼굴·두피를 살펴보세요' };
@@ -263,7 +337,7 @@
       // 뒤에서 본 머리(작은 그림): 뒷머리·목덜미
       inset(g, 130, 300, 105, '뒤에서 본 머리');
       const sk = this.skin(); rrect(g, 105, 330, 50, 62, 12, sk, LINE); ell(g, 130, 290, 64, 76, sk, LINE);
-      g.save(); g.beginPath(); g.ellipse(130, 290, 64, 76, 0, 0, 7); g.clip(); ell(g, 130, 262, 80, 80, '#2b221d'); g.restore();
+      g.save(); g.beginPath(); g.ellipse(130, 290, 64, 76, 0, 0, 7); g.clip(); ell(g, 130, 262, 80, 80, this.look().hair); g.restore();
       for (const d of [-1, 1]) ell(g, 130 + d * 66, 300, 9, 17, sk, LINE);
       if (this.sel) { finger(g, this.sel.x, this.sel.y, ease(this.since() / 0.4)); }
     },
@@ -436,7 +510,7 @@
       const k = this.since(), up = k < 2 ? Math.sin(Math.PI * k / 2) * 14 : 0, sz = this.p.size || 0;
       upper(this, g);
       g.save(); g.translate(0, -up);
-      if (this.av[0] === 'm' || this.av === 't_m') ell(g, 600, 212, 12, 9, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.2)');
+      if (this.look().male && this.look().age !== 'c') ell(g, 600, 212, 12, 9, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.2)');
       if (sz >= 0.3) for (const d of [-1, 1]) ell(g, 600 + d * (20 + sz * 14), 248, 15 + sz * 20, 20 + sz * 20, 'rgba(255,255,255,.1)', 'rgba(0,0,0,.22)');
       g.restore();
       if (k < 2) note(g, '꿀꺽 — 침 삼키기', 600, 330);
@@ -500,7 +574,7 @@
   function breastDiagram(e, g) {
     const p = e.p, sk = e.skin(); floor(g, 540);
     for (const [k, d] of SIDES) {
-      const x = CX + d * 190, y = 290, s = p[k] || {}, male = p.gyneco || e.av[0] === 'm';
+      const x = CX + d * 190, y = 290, s = p[k] || {}, male = p.gyneco || e.look().male;
       ell(g, x, y, 140, 140, mix(sk, '#c0504a', s.skin === 'red' ? 0.35 : 0), LINE);
       g.strokeStyle = 'rgba(150,200,190,.18)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - 140, y); g.lineTo(x + 140, y); g.moveTo(x, y - 140); g.lineTo(x, y + 140); g.stroke();
       if (s.skin === 'peau') { const rnd = BE.mulberry(41); g.save(); g.beginPath(); g.arc(x, y, 138, 0, 7); g.clip(); dots(g, rnd, 160, x + d * 40, y + 30, 90, 80, 2, 'rgba(90,50,30,.4)'); g.restore(); }
@@ -593,6 +667,11 @@
         const x = CX + d * 170, gr = p[k] || 0, sw = gr * 7, calf = p.calf === k ? 18 : 0;
         g.fillStyle = p.tense === k ? mix(sk, '#d04a40', 0.4) : sk; g.strokeStyle = LINE; g.lineWidth = 2;
         g.beginPath(); g.moveTo(x - 60 - sw, 40); g.quadraticCurveTo(x - 85 - sw - calf, 180, x - 40 - sw, 420); g.lineTo(x - 45 - sw, 470); g.quadraticCurveTo(x - 60 - sw, 540, x + d * 10, 545); g.quadraticCurveTo(x + 80 + sw, 540, x + 50 + sw, 470); g.lineTo(x + 40 + sw, 420); g.quadraticCurveTo(x + 85 + sw + calf, 180, x + 60 + sw, 40); g.closePath(); g.fill(); g.stroke();
+        // 정강이뼈 선·복사뼈·발가락. 부종이 심할수록 복사뼈·힘줄 윤곽이 묻혀 안 보임
+        const vis = clamp(1 - gr / 2.5, 0, 1);
+        g.strokeStyle = `rgba(90,50,30,${0.08 + 0.12 * vis})`; g.lineWidth = 2; g.beginPath(); g.moveTo(x - d * 8, 70); g.quadraticCurveTo(x - d * 14, 250, x - d * 6, 430); g.stroke();
+        if (vis > 0.05) for (const m of [-1, 1]) { g.strokeStyle = `rgba(90,50,30,${0.3 * vis})`; g.lineWidth = 2; g.beginPath(); g.arc(x + m * (44 + sw * 0.6), 462, 11, m < 0 ? 1.9 : -1.2, m < 0 ? 4.4 : 1.25); g.stroke(); }
+        for (let i = 0; i < 5; i++) { const tx = x - d * (34 - i * 17) * -1 + d * 4, tr = [13, 10, 9.5, 9, 8][i]; ell(g, tx, 540 - (i === 0 ? 2 : i * 1.5), tr + sw * 0.15, tr * 0.8, g.fillStyle = p.tense === k ? mix(sk, '#d04a40', 0.4) : sk, LINE); }
         if (p.stasis) { const gg = g.createLinearGradient(0, 320, 0, 470); gg.addColorStop(0, 'rgba(120,70,40,0)'); gg.addColorStop(1, 'rgba(120,70,40,.5)'); g.fillStyle = gg; g.fillRect(x - 90 - sw, 320, 180 + sw * 2, 150); }
         if (p.tense === k) { g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.ellipse(x - 20, 220, 18, 90, 0, 0, 7); g.fill(); }
         note(g, k === 'R' ? '오른쪽 다리' : '왼쪽 다리', x, 585);
@@ -619,7 +698,7 @@
 (function () {
   'use strict';
   const BE = window.BodyEngine, S = BE.SCENES, W = 1200, H = 600, CX = 600, mix = BE.mix;
-  const { ell, txt, limb, rrect, figure, hand, lying, note, dots, finger, protractor, floor } = BE.draw;
+  const { ell, txt, limb, rrect, figure, hand, lying, note, dots, finger, protractor, floor, footShape } = BE.draw;
   const LINE = 'rgba(0,0,0,.35)', SIDES = [['R', -1], ['L', 1]], ABD = BE.ABD;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = (k) => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
 
@@ -734,7 +813,7 @@
       const cx = 600, cy = 290, p = this.p; clockFace(g, cx, cy, 200);
       ell(g, cx, cy, 22, 22, '#3a1612');
       if (this.act) {
-        if (p.prostate || this.av[0] === 'm') { const big = p.prostate === 'enlarged' ? 1.4 : p.prostate === 'boggy' ? 1.2 : 1; ell(g, cx, cy - 110, 60 * big, 40 * big, p.prostate === 'boggy' ? 'rgba(220,90,80,.35)' : 'rgba(255,255,255,.12)', 'rgba(232,215,166,.6)'); if (p.prostate === 'hard') dots(g, BE.mulberry(3), 6, cx, cy - 110, 40, 25, 6, 'rgba(232,215,166,.6)'); note(g, '전립선(남성)', cx, cy - 165); }
+        if (p.prostate || this.look().male) { const big = p.prostate === 'enlarged' ? 1.4 : p.prostate === 'boggy' ? 1.2 : 1; ell(g, cx, cy - 110, 60 * big, 40 * big, p.prostate === 'boggy' ? 'rgba(220,90,80,.35)' : 'rgba(255,255,255,.12)', 'rgba(232,215,166,.6)'); if (p.prostate === 'hard') dots(g, BE.mulberry(3), 6, cx, cy - 110, 40, 25, 6, 'rgba(232,215,166,.6)'); note(g, '전립선(남성)', cx, cy - 165); }
         if (p.mass) { const [x, y] = at(cx, cy, p.mass, 90); ell(g, x, y, 30, 24, 'rgba(255,255,255,.18)', 'rgba(232,215,166,.7)'); }
         const gc = { fresh: '#b01818', melena: '#1a1410', jelly: '#a02a3a' }[p.blood];
         g.save(); g.translate(1000, 300); g.rotate(-0.4); rrect(g, -30, -120, 60, 200, 30, '#a9cbe6', 'rgba(0,0,0,.3)'); if (gc) { g.beginPath(); g.arc(0, -90, 30, Math.PI, 0); g.lineTo(30, -60); g.lineTo(-30, -60); g.closePath(); g.fillStyle = gc; g.fill(); } if (p.stool) ell(g, 0, -95, 22, 14, '#5a3a20'); g.restore();
@@ -746,7 +825,7 @@
       f.push(p.tone === 'lax' ? '괄약근 조임이 약함.' : '괄약근 조임 정상.');
       if (p.stool === 'impacted') f.push('딱딱한 대변 덩어리가 꽉 차 있음.');
       if (p.prostate) f.push({ enlarged: '전립선이 고르게 커지고 고무처럼 탄력 있음, 가운데 고랑이 얕아짐.', hard: '전립선이 돌처럼 단단하고 울퉁불퉁하며 고랑이 만져지지 않음.', boggy: '전립선이 물렁하고 뜨거우며 누르면 몹시 아파함.' }[p.prostate]);
-      else if (this.av[0] === 'm') f.push('전립선 크기·단단함 정상, 가운데 고랑 만져짐.');
+      else if (this.look().male) f.push('전립선 크기·단단함 정상, 가운데 고랑 만져짐.');
       if (p.mass) f.push(`${p.mass}시 방향에 단단한 덩어리가 만져짐.`);
       f.push({ fresh: '장갑에 선홍색 피가 묻어 나옴.', melena: '장갑에 검고 끈적한 변이 묻어 나옴.', jelly: '장갑에 피 섞인 젤리 같은 점액이 묻어 나옴.' }[p.blood] || '장갑에 피가 묻어 나오지 않음.');
       const say = p.prostate === 'boggy' ? '아악! 너무 아파요!' : p.tender === 'R' ? '아! 오른쪽이 아파요.' : p.tender || p.pain ? '아파요…' : '';
@@ -800,8 +879,7 @@
     note(g, '오른손(손등)', 820, 300); note(g, '왼손(손등)', 1060, 300);
     for (const [k, d] of SIDES) {
       const x = 820 + (d < 0 ? 0 : 240), y = 450, v = J['mtp1_' + k] || {};
-      ell(g, x, y, 55, 90, sk, LINE);
-      for (let i = 0; i < 5; i++) ell(g, x - d * (30 - i * 15), y - 90 - (i === 0 ? 8 : 0), i === 0 ? 15 : 10, i === 0 ? 18 : 12, sk, LINE);
+      footShape(g, x, y + 10, 55, 92, -d, sk);
       if (v.sw || v.red) ell(g, x - d * 30, y - 60, 20 * (0.8 + (v.sw || 0) * 0.5), 18, mix(sk, '#c8483e', clamp((v.red || 0) * 0.8, 0, 0.7)), LINE);
       note(g, k === 'R' ? '오른발(위에서)' : '왼발(위에서)', x, 562);
     }
@@ -856,7 +934,7 @@
     g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2;
     for (const d of [-1, 1]) { g.beginPath(); g.moveTo(CX + d * sw, 185); g.quadraticCurveTo(CX + d * (sw + 50), 300, CX + d * (sw + 50), 460); g.lineTo(CX + d * (sw + 18), 465); g.quadraticCurveTo(CX + d * (sw + 15), 320, CX + d * (sw - 20), 250); g.closePath(); g.fill(); g.stroke(); }
     g.beginPath(); g.moveTo(CX - sw, 180); g.quadraticCurveTo(CX, 155, CX + sw, 180); g.lineTo(CX + 120, 360); g.quadraticCurveTo(CX + 115, 440, CX + 130, 480); g.lineTo(CX - 130, 480); g.quadraticCurveTo(CX - 115, 440, CX - 120, 360); g.closePath(); g.fill(); g.stroke();
-    g.fillRect(CX - 26, 125, 52, 50); ell(g, CX, 85, 54, 62, '#2b221d', LINE);
+    const L = e.look(); g.fillRect(CX - 26, 125, 52, 50); if (L.long) { g.fillStyle = L.hair; g.beginPath(); g.ellipse(CX, 120, 62, 95, 0, 0, 7); g.fill(); } ell(g, CX, 85, 54, 62, L.hair, LINE);
     g.strokeStyle = 'rgba(80,40,20,.25)'; for (const d of [-1, 1]) { g.beginPath(); g.moveTo(CX + d * 30, 205); g.lineTo(CX + d * 90, 215); g.lineTo(CX + d * 70, 290); g.stroke(); }
     g.strokeStyle = 'rgba(80,40,20,.35)'; g.setLineDash([3, 7]); g.lineWidth = 3; g.beginPath(); g.moveTo(CX, 180); g.lineTo(CX, 455); g.stroke(); g.setLineDash([]);
     g.fillStyle = '#5f7f9a'; g.fillRect(CX - 131, 460, 262, 100);
@@ -871,7 +949,7 @@
       ell(g, 1040, 300, 100, 140, '#1a2529', 'rgba(150,200,190,.35)'); note(g, '옆에서 본 등', 1040, 460);
       const k = p.curve === 'kyphosis' ? 40 : 15, l = p.curve === 'flat' ? 0 : 18;
       g.strokeStyle = this.skin(); g.lineWidth = 14; g.lineCap = 'round'; g.beginPath(); g.moveTo(1045, 180); g.bezierCurveTo(1045 + k, 250, 1045 + k * 0.4, 330, 1040 - l, 370); g.quadraticCurveTo(1035 - l * 0.6, 400, 1045, 425); g.stroke();
-      ell(g, 1030 - (p.curve === 'kyphosis' ? 10 : 0), 168, 22, 22, '#2b221d');
+      ell(g, 1030 - (p.curve === 'kyphosis' ? 10 : 0), 168, 22, 22, this.look().hair);
     },
   };
   S.backp = {
@@ -934,7 +1012,7 @@
 (function () {
   'use strict';
   const BE = window.BodyEngine, S = BE.SCENES, W = 1200, H = 600, CX = 600, mix = BE.mix;
-  const { ell, txt, limb, rrect, face, figure, hand, lying, note, fork, finger, ring, protractor, floor } = BE.draw;
+  const { ell, txt, limb, rrect, face, figure, hand, lying, note, fork, finger, ring, protractor, floor, footShape } = BE.draw;
   const LINE = 'rgba(0,0,0,.35)', SIDES = [['R', -1], ['L', 1]];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = (k) => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
   const SN = (s) => s === 'R' ? '오른쪽' : '왼쪽';
@@ -1013,7 +1091,7 @@
     const F = figure(e, g, 300, 40, 520, { armOut: legs ? 0 : 0.4 });
     const hp = {};
     if (!legs) for (const [k, d] of SIDES) { hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 270, 120, d, { palm: true }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', 820 + (d < 0 ? 0 : 240), 410); }
-    else for (const [k, d] of SIDES) { const x = 820 + (d < 0 ? 0 : 240), sk = e.skin(); ell(g, x, 300, 60, 120, sk, LINE); for (let i = 0; i < 5; i++) ell(g, x + d * (34 - i * 16) * -1, 175 - (i === 0 ? 8 : 0), i === 0 ? 16 : 11, i === 0 ? 19 : 13, sk, LINE); note(g, k === 'R' ? '오른발 바닥' : '왼발 바닥', x, 450); }
+    else for (const [k, d] of SIDES) { const x = 820 + (d < 0 ? 0 : 240), sk = e.skin(); footShape(g, x, 305, 60, 122, -d, sk, { sole: true }); note(g, k === 'R' ? '오른발 바닥' : '왼발 바닥', x, 450); }
     return { F, hp };
   }
   function sensPts(e, legs) {
@@ -1029,7 +1107,7 @@
       for (const [k, d] of SIDES) {
         o.push({ k: k + '.thigh', x: cx + d * 7.2 * u, y: top + 62 * u, n: `${SN(k)} 허벅지 앞` }, { k: k + '.shinM', x: cx + d * 5 * u, y: top + 84 * u, n: `${SN(k)} 정강이 안쪽` }, { k: k + '.calfL', x: cx + d * 10 * u, y: top + 82 * u, n: `${SN(k)} 종아리 바깥쪽` }, { k: k + '.dorsum', x: cx + d * 8.5 * u, y: top + 97 * u, n: `${SN(k)} 발등` });
         const x = 820 + (d < 0 ? 0 : 240);
-        o.push({ k: k + '.sole', x: x - d * 40, y: 330, n: `${SN(k)} 발바닥 바깥쪽·새끼발가락` }, { k: k + '.vib', x: x, y: 520, n: `${SN(k)} 안쪽 복사뼈 — 소리굽쇠 진동` }, { k: k + '.propr', x: x - d * 34, y: 175, n: `${SN(k)} 엄지발가락 위치감각(위/아래)` });
+        o.push({ k: k + '.sole', x: x + d * 40, y: 330, n: `${SN(k)} 발바닥 바깥쪽·새끼발가락` }, { k: k + '.vib', x: x, y: 520, n: `${SN(k)} 안쪽 복사뼈 — 소리굽쇠 진동` }, { k: k + '.propr', x: x - d * 34, y: 175, n: `${SN(k)} 엄지발가락 위치감각(위/아래)` });
       }
       o.push({ k: 'C.above', x: cx, y: top + 37 * u, n: '배꼽 위' }, { k: 'C.below', x: cx, y: top + 45 * u, n: '배꼽 아래' }, { k: 'C.saddle', x: cx, y: top + 57.5 * u, n: '엉덩이 안쪽·회음부(안장 부위)' });
     }

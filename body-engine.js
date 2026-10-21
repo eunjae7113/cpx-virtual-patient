@@ -32,8 +32,9 @@
     points() { const sc = this.scene(); return sc && sc.pts ? sc.pts.call(this) : (POINTS[this.task] || (() => []))(); }
     // 마지막 진찰 동작(k = 지점 키, 'act' = 진찰하기)에서 지난 초. 없으면 아주 큰 수
     since(k) { return this.act && (k == null || this.act.k === k) ? this.t - this.act.t0 : 1e9; }
+    look() { return BodyEngine.look(this.av); }
     skin() {
-      const s = { m_m: '#d9a882', f_m: '#e2b391', m_o: '#cf9f7d', f_o: '#d8ab8c', m_y: '#e0b08b', f_y: '#e6bb98', c_m: '#e4b896', c_f: '#e6bb9a', t_m: '#dcac87', t_f: '#e3b590', nb: '#efc4a8' }[this.av] || '#d9a882';
+      const s = this.look().skin;
       return this.tint ? BodyEngine.mix(s, this.tint[0], this.tint[1]) : s;
     }
     // '진찰하기' 단추: 장면 전체 동작(부르기·표정 짓기·그림 그리기 등)
@@ -213,24 +214,40 @@
       g.fillStyle = 'rgba(8,14,16,.82)'; g.beginPath(); g.roundRect ? g.roundRect(20, y, W - 40, h, 10) : g.rect(20, y, W - 40, h); g.fill();
       g.fillStyle = '#e8d7a6'; lines.forEach((l, i) => g.fillText(l, 40, y + 28 + i * 24));
     }
+    // 앞모습 몸통(청진·타진·복부 그림 공통). 외형(성별·나이)에 따라 어깨·허리 폭, 머리 크기, 가슴 모양이 바뀜. 진찰 지점 좌표는 그대로
     body(g) {
-      const skin = this.skin();
+      const skin = this.skin(), L = this.look(), f = L.sex === 'f', kid = L.age === 'c' || L.age === 'nb';
+      const sh = kid ? 126 : f ? 136 : L.age === 't' ? 140 : 150, wa = f ? 114 : kid ? 122 : 130, hip = f ? 142 : kid ? 122 : 135, hr = kid ? 1.15 : 1;
       g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2;
-      // 머리·목·몸통·팔
-      g.beginPath(); g.ellipse(CX, 80, 52, 62, 0, 0, 7); g.fill(); g.stroke();
-      if (BodyEngine.draw) { g.restore(); BodyEngine.draw.face(this, g, CX, 80, 62, { hair: true }); g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; }
-      g.fillRect(CX - 26, 130, 52, 40);
-      g.beginPath(); g.moveTo(CX - 150, 180); g.quadraticCurveTo(CX, 150, CX + 150, 180); g.lineTo(CX + 130, 360); g.quadraticCurveTo(CX + 120, 440, CX + 135, 540);
-      g.lineTo(CX - 135, 540); g.quadraticCurveTo(CX - 120, 440, CX - 130, 360); g.closePath(); g.fill(); g.stroke();
-      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(CX + s * 150, 182); g.quadraticCurveTo(CX + s * 205, 300, CX + s * 205, 470); g.lineTo(CX + s * 170, 475); g.quadraticCurveTo(CX + s * 165, 320, CX + s * 128, 250); g.closePath(); g.fill(); g.stroke(); }
-      // 갈비뼈 선·배꼽·유두(희미하게, 위치 기준)
+      if (BodyEngine.draw) { g.restore(); BodyEngine.draw.face(this, g, CX, 80 - (hr - 1) * 40, 62 * hr, { hair: true }); g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; }
+      else { g.beginPath(); g.ellipse(CX, 80, 52, 62, 0, 0, 7); g.fill(); g.stroke(); }
+      g.fillRect(CX - (f || kid ? 22 : 26), 128, f || kid ? 44 : 52, 42);
+      // 몸통: 어깨 → 허리 → 엉덩이
+      g.beginPath(); g.moveTo(CX - sh, 180); g.quadraticCurveTo(CX, 150, CX + sh, 180); g.lineTo(CX + sh - (f || kid ? 8 : 20), 330); g.quadraticCurveTo(CX + wa - 8, 400, CX + (kid ? wa + 10 : wa), 430); g.quadraticCurveTo(CX + hip, 480, CX + hip, 540);
+      g.lineTo(CX - hip, 540); g.quadraticCurveTo(CX - hip, 480, CX - (kid ? wa + 10 : wa), 430); g.quadraticCurveTo(CX - wa + 8, 400, CX - sh + (f || kid ? 8 : 20), 330); g.closePath(); g.fill(); g.stroke();
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(CX + s * sh, 182); g.quadraticCurveTo(CX + s * (sh + 55), 300, CX + s * (sh + 52), 470); g.lineTo(CX + s * (sh + 22), 475); g.quadraticCurveTo(CX + s * (sh + 15), 320, CX + s * (sh - 22), 250); g.closePath(); g.fill(); g.stroke(); }
+      // 갈비뼈 선·배꼽(희미하게, 위치 기준). 마른 노인은 갈비뼈가 조금 더 보임
       g.strokeStyle = 'rgba(80,40,20,.18)'; g.lineWidth = 2;
       g.beginPath(); g.moveTo(CX, 175); g.lineTo(CX, 345); g.stroke();
-      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(CX + s * 12, 345); g.quadraticCurveTo(CX + s * 80, 380, CX + s * 125, 360); g.stroke(); }
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(CX + s * 12, 345); g.quadraticCurveTo(CX + s * 80, 380, CX + s * 118, 360); g.stroke(); }
+      if (L.age === 'e') { g.strokeStyle = 'rgba(80,40,20,.12)'; for (const s of [-1, 1]) for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(CX + s * 20, 215 + i * 30); g.quadraticCurveTo(CX + s * 70, 225 + i * 30, CX + s * (sh - 30), 250 + i * 28); g.stroke(); } }
       g.fillStyle = 'rgba(120,60,40,.35)'; g.beginPath(); g.arc(CX, 450, 5, 0, 7); g.fill();
-      for (const s of [-1, 1]) { g.beginPath(); g.arc(CX + s * 70, 255, 5, 0, 7); g.fill(); }
+      if (f && !kid && L.age !== 't') {
+        // 여성: 유방 윤곽(그늘 선만, 교육용 도식)
+        for (const s of [-1, 1]) {
+          const gr = g.createRadialGradient(CX + s * 68, 268, 10, CX + s * 68, 268, 62); gr.addColorStop(0, 'rgba(255,255,255,.10)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = gr; g.beginPath(); g.ellipse(CX + s * 68, 262, 62, 56, 0, 0, 7); g.fill();
+          g.strokeStyle = 'rgba(90,45,30,.28)'; g.lineWidth = 2; g.beginPath(); g.arc(CX + s * 68, 258, 58, Math.PI * (s < 0 ? 0.15 : 0.15), Math.PI * 0.9); g.stroke();
+        }
+      } else if (f && L.age === 't') {
+        for (const s of [-1, 1]) { g.strokeStyle = 'rgba(90,45,30,.2)'; g.lineWidth = 2; g.beginPath(); g.arc(CX + s * 66, 255, 36, Math.PI * 0.2, Math.PI * 0.85); g.stroke(); }
+      } else {
+        g.fillStyle = 'rgba(120,60,40,.35)'; for (const s of [-1, 1]) { g.beginPath(); g.arc(CX + s * (kid ? 58 : 70), 255, kid ? 4 : 5, 0, 7); g.fill(); }
+        if (!kid && L.age !== 't') { g.strokeStyle = 'rgba(80,40,20,.12)'; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(CX + s * 18, 212); g.quadraticCurveTo(CX + s * 80, 205, CX + s * (sh - 25), 225); g.stroke(); } }
+      }
+      if (kid) { const gr = g.createRadialGradient(CX - 20, 430, 10, CX, 445, 120); gr.addColorStop(0, 'rgba(255,255,255,.12)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.ellipse(CX, 445, 120, 90, 0, 0, 7); g.fill(); }
       // 환자복 반바지
-      g.fillStyle = '#5f7f9a'; g.fillRect(CX - 136, 520, 272, 80);
+      g.fillStyle = '#5f7f9a'; g.fillRect(CX - hip - 1, 520, 2 * hip + 2, 80);
       g.restore();
       g.fillStyle = '#7f918d'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'center';
       g.fillText('환자 오른쪽', CX - 250, 590); g.fillText('환자 왼쪽', CX + 250, 590);
@@ -244,6 +261,14 @@
     snap() { return this.cv.toDataURL('image/jpeg', 0.9); }
   }
   function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  // 외형 id(c 소아 t 청소년 y 20~30대 m 40~50대 s 60대 e 80대 × _m/_f, nb 신생아) → 그림에 쓰는 성별·나이·피부·머리색
+  // 주의: 첫 글자는 나이(m = 40~50대)이고 성별은 끝 글자
+  BodyEngine.look = (av) => {
+    av = av || 'm_m';
+    const sex = /_f$/.test(av) ? 'f' : 'm', age = av === 'nb' ? 'nb' : av[0];
+    const skin = { c: '#e4b896', nb: '#efc4a8', t: '#dcac87', y: '#e0b08b', m: '#d9a882', s: '#d2a280', e: '#cf9f7d' }[age] || '#d9a882';
+    return { sex, age, skin: sex === 'f' ? BodyEngine.mix(skin, '#f0c8a8', 0.25) : skin, hair: age === 'e' ? '#d8d4cc' : age === 's' ? '#8a8580' : '#2b221d', long: sex === 'f' && age !== 'nb', male: sex === 'm' };
+  };
   BodyEngine.SOUND_TASKS = SOUND_TASKS;
   BodyEngine.W = W; BodyEngine.H = H; BodyEngine.CX = CX; BodyEngine.ABD = ABD; BodyEngine.LUNG = LUNG; BodyEngine.mulberry = mulberry;
   BodyEngine.mix = (a, b, t) => { const h = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); const A = h(a), B = h(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
