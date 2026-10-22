@@ -39,6 +39,9 @@
   // ---- 얼굴(앞모습). o: eR/eL 눈 뜬 정도 0~1, bR/bL 눈썹 올림, mR/mL 입꼬리(+위), open 입 벌림, teeth, pursed, gx/gy 시선,
   //      wide 얼굴 폭, cyan 입술 청색, puffy 눈 부기, parR/parL 이하선 부기, flatR/flatL 코입술 주름 없음, flare 콧볼 벌렁임
   function face(e, g, cx, cy, s, o = {}) {
+    // 실사 얼굴이 있으면 사진. 입 모양을 바꾸는 표정(입 벌리기·오므리기·한쪽 처짐 등)은 사진으로 못 그려 코드 그림
+    const P = !o.code && !(o.open > 0.05 || o.teeth || o.pursed || o.flatR || o.flatL || o.bR > 0.4 || o.bL > 0.4 || o.parR || o.parL || o.puffy || o.drool) && facePhoto(e);
+    if (P) { photoFace(e, g, cx, cy, s, o, P); return; }
     const sk = o.skin || e.skin(), wide = o.wide || 1, L = e.look(), hairC = o.hairC || L.hair;
     // 긴 머리(여성)는 얼굴 뒤에 먼저
     if (L.long && o.hair !== false) { g.fillStyle = hairC; g.beginPath(); g.ellipse(cx, cy + 0.15 * s, 0.98 * s * wide, 1.12 * s, 0, 0, 7); g.fill(); g.fillRect(cx - 0.98 * s * wide, cy + 0.15 * s, 1.96 * s * wide, 0.75 * s); }
@@ -93,6 +96,61 @@
     }
     g.strokeStyle = 'rgba(80,30,30,.5)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - mw, yR); g.quadraticCurveTo(cx, my + 0.01 * s, cx + mw, yL); g.stroke();
     if (o.drool) { g.fillStyle = 'rgba(220,235,245,.7)'; g.beginPath(); g.moveTo(cx + 0.1 * s, my + 0.04 * s); g.quadraticCurveTo(cx + 0.14 * s, my + 0.25 * s, cx + 0.1 * s, my + 0.3 * s); g.quadraticCurveTo(cx + 0.06 * s, my + 0.22 * s, cx + 0.08 * s, my + 0.04 * s); g.fill(); }
+  }
+
+  // ---- 실사 얼굴(BodyEngine.FACES, 피부 진찰실 정상 얼굴 사진). 없거나 아직 안 읽혔으면 null → 코드 얼굴
+  function facePhoto(e) {
+    const d = !e.noPhoto && (BE.FACES || {})[e.av];
+    if (!d) return null;
+    if (!d.img) { d.img = new Image(); d.img.onload = () => e.draw(); d.img.src = d.src; }
+    return d.img.complete && d.img.naturalWidth ? d : null;
+  }
+  // 사진 피부색(뺨 둘레 평균) — 눈 감기(눈꺼풀 칠하기)에 씀
+  function faceSkin(d) {
+    if (d.skinC) return d.skinC;
+    const c = document.createElement('canvas'); c.width = c.height = 64; const t = c.getContext('2d');
+    t.drawImage(d.img, 0, 0, 64, 64); let r = 0, gg = 0, b = 0, n = 0;
+    for (const [u, v] of [[d.eyes[0][0], d.eyes[0][1] + 0.1], [d.eyes[1][0], d.eyes[1][1] + 0.1], [(d.eyes[0][0] + d.eyes[1][0]) / 2, d.eyes[0][1] - 0.1]]) {
+      const px = t.getImageData(Math.round(u * 64) - 2, Math.round(v * 64) - 2, 4, 4).data;
+      for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 200) { r += px[i]; gg += px[i + 1]; b += px[i + 2]; n++; }
+    }
+    return (d.skinC = n ? `rgb(${r / n | 0},${gg / n | 0},${b / n | 0})` : '#d9b49a');
+  }
+  // 두 눈 가운데 → 코드 얼굴의 눈 높이(cy − 0.08 s), 눈 사이 → 0.62 s 가 되게 사진을 놓음.
+  // 눈 감기(eR/eL)는 눈 위를 피부색으로 덮고 속눈썹 선, 입술 청색증(cyan)은 입술에 보라색을 곱함. 시선(gx)은 사진이라 그리지 않음
+  function photoFace(e, g, cx, cy, s, o, d) {
+    const img = d.img, iw = img.naturalWidth, ih = img.naturalHeight, [R, L] = d.eyes;
+    const k = 0.62 * s * (o.wide || 1) / ((L[0] - R[0]) * iw), x0 = cx - (R[0] + L[0]) / 2 * iw * k, y0 = cy - 0.08 * s - (R[1] + L[1]) / 2 * ih * k;
+    const P = (u, v) => [x0 + u * iw * k, y0 + v * ih * k];
+    {   // 사진 아래 끝(어깨·가운)이 일자로 잘려 보이지 않게 아래 18% 를 흐리게
+      const c = BE.scratch(3), t = c.getContext('2d'), yb = y0 + ih * k;
+      t.clearRect(0, 0, W, H); t.drawImage(img, x0, y0, iw * k, ih * k); t.globalCompositeOperation = 'destination-in';
+      const gr = t.createLinearGradient(0, yb - 0.18 * ih * k, 0, yb); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      t.fillStyle = gr; t.fillRect(0, 0, W, H); t.globalCompositeOperation = 'source-over'; g.drawImage(c, 0, 0);
+    }
+    if (e.tint) {   // 황달 등: 사진 위에 곱하기(머리카락에도 조금 묻음)
+      g.save(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = Math.min(1, e.tint[1] * 1.6);
+      const c = BE.scratch(2), t = c.getContext('2d'); t.clearRect(0, 0, c.width, c.height); t.drawImage(img, x0, y0, iw * k, ih * k);
+      t.globalCompositeOperation = 'source-in'; t.fillStyle = e.tint[0]; t.fillRect(0, 0, c.width, c.height); t.globalCompositeOperation = 'source-over';
+      g.drawImage(c, 0, 0); g.restore();
+    }
+    const sk = faceSkin(d);
+    [R, L].forEach((m, i) => {
+      const op = clamp(i === 0 ? (o.eR == null ? 1 : o.eR) : (o.eL == null ? 1 : o.eL), 0, 1);
+      if (op > 0.92) return;
+      const [ex, ey] = P(m[0], m[1]), rx = m[2] * iw * k * 1.35, ry = Math.max(m[3] * ih * k * 1.6, rx * 0.42), lid = ey - ry + (1 - op) * 2 * ry;
+      g.save(); g.beginPath(); g.ellipse(ex, ey, rx, ry, 0, 0, 7); g.clip();
+      g.fillStyle = sk; g.fillRect(ex - rx, ey - ry - 2, 2 * rx, lid - (ey - ry) + 2); g.restore();
+      g.strokeStyle = 'rgba(40,25,20,.85)'; g.lineWidth = Math.max(1.5, s * 0.012); g.beginPath();
+      g.moveTo(ex - rx * 0.95, Math.min(lid, ey + ry * 0.2)); g.quadraticCurveTo(ex, lid + ry * 0.25, ex + rx * 0.95, Math.min(lid, ey + ry * 0.2)); g.stroke();
+    });
+    if (o.cyan && d.mouth) {
+      const [mx, my] = P(d.mouth[0], d.mouth[1]), rx = d.mouth[2] * iw * k * 1.1, ry = d.mouth[3] * ih * k * 1.4;
+      g.save(); g.globalCompositeOperation = 'multiply'; g.translate(mx, my); g.scale(1, ry / rx);
+      const gr = g.createRadialGradient(0, 0, rx * 0.5, 0, 0, rx); gr.addColorStop(0, 'rgba(120,110,190,.85)'); gr.addColorStop(1, 'rgba(120,110,190,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+    }
+    g.fillStyle = 'rgba(232,215,166,.75)'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'right'; g.fillText('AI 생성 이미지', W - 16, H - 12);
   }
 
   // 굵기가 점점 바뀌는 팔다리(마디마다 굵기 ws[i]). 관절은 둥글게 이어 붙임
@@ -174,7 +232,7 @@
     // 목·머리(얼굴은 face 를 작게)
     const hs = kid ? 1.12 : 1;
     g.fillStyle = sk; g.fillRect(cx - 2.6 * u, top + 11 * u, 5.2 * u, 5 * u); g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 2.6 * u, top + 12 * u); g.lineTo(cx - 2.6 * u, top + 15 * u); g.moveTo(cx + 2.6 * u, top + 12 * u); g.lineTo(cx + 2.6 * u, top + 15 * u); g.stroke();
-    face(e, g, cx, top + 6.5 * u, 6.9 * u * hs, { wide: 0.88 });
+    face(e, g, cx, top + 6.5 * u, 6.9 * u * hs, { wide: 0.88, code: true });
     J.top = top; J.u = u; J.cx = cx;
     return J;
   }
@@ -308,12 +366,18 @@
   };
 
   // ================================================================ 머리
+  // 멍: 가장자리가 흐린 얼룩을 '곱하기'로(사진 결이 살아 있게)
+  function bruise(g, x, y, rx, ry, c) {
+    g.save(); g.globalCompositeOperation = 'multiply'; g.translate(x, y); g.scale(1, ry / rx);
+    const gr = g.createRadialGradient(0, 0, rx * 0.2, 0, 0, rx); gr.addColorStop(0, `rgba(${c},.75)`); gr.addColorStop(0.6, `rgba(${c},.45)`); gr.addColorStop(1, `rgba(${c},0)`);
+    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+  }
   function headBase(e, g, extra) {
     const p = e.p, big = p.big ? 1.12 : 1;
     floor(g, 520); face(e, g, 430, 290, 190 * big, Object.assign({ wide: p.big ? 1.08 : 1 }, extra || {}));
     const rnd = BE.mulberry(11);
     for (const [k, d] of SIDES) {
-      if (p.bruise === k) { ell(g, 430 + d * 150 * big, 210, 46, 34, 'rgba(90,50,110,.45)'); if (p.old) ell(g, 430 + d * 140 * big, 330, 34, 26, 'rgba(150,150,60,.45)'); }
+      if (p.bruise === k) { bruise(g, 430 + d * 112 * big, 222, 40, 30, [90, 50, 110]); if (p.old) bruise(g, 430 + d * 105 * big, 350, 34, 26, [150, 150, 60]); }
       if (p.lac === k) { g.strokeStyle = '#9b2a2a'; g.lineWidth = 4; g.beginPath(); g.moveTo(430 + d * 40, 170); g.lineTo(430 + d * 110, 155); g.stroke(); }
     }
     inset(g, 930, 190, 120, '머리카락·두피 확대');
@@ -488,7 +552,7 @@
     for (const d of [-1, 1]) { g.beginPath(); g.moveTo(600 + d * 240, 320); g.quadraticCurveTo(600 + d * 300, 420, 600 + d * 305, 600); g.lineTo(600 + d * 245, 600); g.lineTo(600 + d * 225, 390); g.closePath(); g.fill(); g.stroke(); }
     g.fillRect(548, 170, 104, 105); g.beginPath(); g.moveTo(548, 175); g.lineTo(548, 274); g.moveTo(652, 175); g.lineTo(652, 274); g.stroke();
     g.strokeStyle = 'rgba(90,50,30,.25)'; for (const d of [-1, 1]) { g.beginPath(); g.moveTo(600 + d * 48, 190); g.lineTo(600 + d * 12, 274); g.stroke(); g.beginPath(); g.moveTo(600 + d * 20, 286); g.quadraticCurveTo(600 + d * 90, 276, 600 + d * 150, 292); g.stroke(); }
-    face(e, g, 600, 100, 92, o.face || {});
+    face(e, g, 600, 100, 92, Object.assign({ code: true }, o.face));
     g.fillStyle = '#5f7f9a'; g.fillRect(360, 500, 480, 100);
     g.fillStyle = sk; g.strokeStyle = LINE; for (const d of [-1, 1]) { g.beginPath(); g.moveTo(600 + d * 4, 600); g.lineTo(600 + d * 4, 540); g.lineTo(600 + d * 110, 500); g.lineTo(600 + d * 160, 600); g.closePath(); g.fill(); }
     g.fillStyle = '#5f7f9a'; g.beginPath(); g.moveTo(360, 500); g.lineTo(840, 500); g.lineTo(840, 520); g.lineTo(600, 545); g.lineTo(360, 520); g.closePath(); g.fill();
@@ -545,11 +609,17 @@
     }
     const tx = CX + (p.trachea === 'L' ? 9 : p.trachea === 'R' ? -9 : 0), ph = e.photo();
     if (ph) {   // 실사 사진: 얼굴은 사진 그대로, 기관 위치만 목에 표시(치우쳤을 때)
-      if (p.trachea) { const m = ph.marks; g.strokeStyle = 'rgba(90,50,30,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - 9, m.chin + 3); g.lineTo(tx - 9, m.clav); g.moveTo(tx + 9, m.chin + 3); g.lineTo(tx + 9, m.clav); g.stroke(); }
+      if (p.cyan) {   // 입술 청색증: 입 위치 = 턱에서 머리 길이(10~턱)의 13% 위(사진을 보고 잼), 보라색을 곱함
+        const m = ph.marks, my = m.chin - 0.13 * (m.chin - 10), rx = 0.09 * (m.chin - 10);
+        g.save(); g.globalCompositeOperation = 'multiply'; g.translate(CX, my); g.scale(1, 0.4);
+        const gr = g.createRadialGradient(0, 0, rx * 0.4, 0, 0, rx); gr.addColorStop(0, 'rgba(120,110,190,.9)'); gr.addColorStop(1, 'rgba(120,110,190,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+      }
+      if (p.trachea) { const m = ph.marks; g.strokeStyle = 'rgba(90,50,30,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - 9, m.chin + 10); g.lineTo(tx - 9, m.clav); g.moveTo(tx + 9, m.chin + 10); g.lineTo(tx + 9, m.clav); g.stroke(); }
       return;
     }
     g.strokeStyle = 'rgba(90,50,30,.3)'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - 9, 140); g.lineTo(tx - 9, 172); g.moveTo(tx + 9, 140); g.lineTo(tx + 9, 172); g.stroke();
-    face(e, g, CX, 80, 60, { cyan: p.cyan, pursed: p.pursed && b.ph > 0.4, flare: p.nasal ? b.a * 1.2 : 0, open: p.pattern === 'kussmaul' ? b.a * 0.3 : 0 });
+    face(e, g, CX, 80, 60, { code: true, cyan: p.cyan, pursed: p.pursed && b.ph > 0.4, flare: p.nasal ? b.a * 1.2 : 0, open: p.pattern === 'kussmaul' ? b.a * 0.3 : 0 });
   }
   function stopwatch(g, t) { const s = Math.floor(t % 60); ell(g, 1110, 70, 34, 34, '#1a2529', 'rgba(150,200,190,.5)'); g.strokeStyle = '#e8d7a6'; g.lineWidth = 3; g.beginPath(); g.moveTo(1110, 70); g.lineTo(1110 + Math.sin(s / 60 * 6.283) * 26, 70 - Math.cos(s / 60 * 6.283) * 26); g.stroke(); txt(g, s + '초', 1110, 125, { al: 'center', size: 14, c: '#93a8a3' }); }
   BE.draw.stopwatch = stopwatch;
@@ -934,11 +1004,32 @@
   };
 
   // ================================================================ 허리 — 뒤에서 본 몸(환자 오른쪽 = 화면 오른쪽)
-  const LV = { T8: 250, T12: 325, L2: 360, L3: 385, 'L4-5': 415, 'L5-S1': 440 };
+  const LV0 = { T8: 250, T12: 325, L2: 360, L3: 385, 'L4-5': 415, 'L5-S1': 440 };
+  // 척추 높이. 실사 뒷모습이면 사진의 견갑골 아래끝(≈T8)·엉덩뼈 능선(≈L4-5) 사이를 코드 그림과 같은 비율로 나눔
+  function levels(e) {
+    const m = ((e.photo('back') || {}).marks) || {};
+    if (!m.scap || !m.crest) return { lv: LV0, y: (v) => v };
+    const k = (m.crest - m.scap) / (415 - 250), y = (v) => m.scap + (v - 250) * k;
+    return { lv: Object.fromEntries(Object.entries(LV0).map(([n, v]) => [n, y(v)])), y };
+  }
   function backView(e, g, tilt, rot) {
     const sk = e.skin(); floor(g, 560);
     g.save(); g.translate(CX, 470); g.rotate((tilt || 0) * Math.PI / 180); g.translate(-CX, -470);
-    const sw = 150 * Math.cos((rot || 0) * Math.PI / 180);
+    const sw = 150 * Math.cos((rot || 0) * Math.PI / 180), ph = e.photo('back');
+    if (ph) {   // 실사 뒷모습(tools/genai_body.py --back): 엉덩뼈 능선 위만 옆으로 굽히고(돌림) 몸통 돌리기는 가로로 좁힘. 다리는 그대로
+      g.restore();
+      const py = ph.marks.crest || 470, sx = Math.max(0.55, Math.cos((rot || 0) * Math.PI / 180));
+      g.save(); g.beginPath(); g.rect(0, py, W, H - py); g.clip(); e.photoBody(g, ph, true); g.restore();
+      // 위로 갈수록 조금씩 더 돌린 가로 띠 30개(척추가 휘듯이) — 능선 근처는 거의 안 돌아 틈이 안 생김
+      const n = 30, hh = py / n;
+      for (let i = 0; i < n; i++) {
+        const y0 = i * hh, a = (tilt || 0) * Math.PI / 180 * (1 - (y0 + hh / 2) / py);
+        g.save(); g.translate(CX, py); g.rotate(a); g.scale(sx, 1); g.translate(-CX, -py);
+        g.beginPath(); g.rect(0, y0 - 4, W, hh + (i === n - 1 ? 5 : 4)); g.clip(); e.photoBody(g, ph, true); g.restore();
+      }
+      note(g, '환자 왼쪽', CX - 260, 590); note(g, '환자 오른쪽', CX + 260, 590); note(g, '뒤에서 본 모습', CX, 30);
+      return;
+    }
     g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2;
     for (const d of [-1, 1]) { g.beginPath(); g.moveTo(CX + d * sw, 185); g.quadraticCurveTo(CX + d * (sw + 50), 300, CX + d * (sw + 50), 460); g.lineTo(CX + d * (sw + 18), 465); g.quadraticCurveTo(CX + d * (sw + 15), 320, CX + d * (sw - 20), 250); g.closePath(); g.fill(); g.stroke(); }
     g.beginPath(); g.moveTo(CX - sw, 180); g.quadraticCurveTo(CX, 155, CX + sw, 180); g.lineTo(CX + 120, 360); g.quadraticCurveTo(CX + 115, 440, CX + 130, 480); g.lineTo(CX - 130, 480); g.quadraticCurveTo(CX - 115, 440, CX - 120, 360); g.closePath(); g.fill(); g.stroke();
@@ -949,11 +1040,12 @@
     g.restore();
     note(g, '환자 왼쪽', CX - 260, 590); note(g, '환자 오른쪽', CX + 260, 590); note(g, '뒤에서 본 모습', CX, 30);
   }
+  BE.draw.backView = backView;
   S.back = {
     pts() { return []; }, hint: '뒤에서 척추 정렬과 피부를 보세요(옆모습 작은 그림 포함)',
     draw(g) {
       const p = this.p; backView(this, g, p.curve === 'list_R' ? 4 : 0);
-      if (p.ulcer) { ell(g, CX, 455, 34, 24, '#8a2a3a', 'rgba(0,0,0,.3)'); ell(g, CX, 455, 16, 10, '#d8c8a0'); }
+      if (p.ulcer) { const uy = levels(this).y(455); ell(g, CX, uy, 34, 24, '#8a2a3a', 'rgba(0,0,0,.3)'); ell(g, CX, uy, 16, 10, '#d8c8a0'); }
       ell(g, 1040, 300, 100, 140, '#1a2529', 'rgba(150,200,190,.35)'); note(g, '옆에서 본 등', 1040, 460);
       const k = p.curve === 'kyphosis' ? 40 : 15, l = p.curve === 'flat' ? 0 : 18;
       g.strokeStyle = this.skin(); g.lineWidth = 14; g.lineCap = 'round'; g.beginPath(); g.moveTo(1045, 180); g.bezierCurveTo(1045 + k, 250, 1045 + k * 0.4, 330, 1040 - l, 370); g.quadraticCurveTo(1035 - l * 0.6, 400, 1045, 425); g.stroke();
@@ -961,7 +1053,7 @@
     },
   };
   S.backp = {
-    pts() { const o = Object.entries(LV).map(([k, y]) => ({ k, x: CX, y, n: `${k} 극돌기 누르기` })); o.push({ k: 'SI_L', x: CX - 45, y: 455, n: '왼쪽 엉치엉덩관절' }, { k: 'SI_R', x: CX + 45, y: 455, n: '오른쪽 엉치엉덩관절' }, { k: 'cva_L', x: CX - 75, y: 335, n: '왼쪽 늑척추각(주먹으로 두드림)' }, { k: 'cva_R', x: CX + 75, y: 335, n: '오른쪽 늑척추각' }, { k: 'para_L', x: CX - 45, y: 400, n: '왼쪽 허리 근육' }, { k: 'para_R', x: CX + 45, y: 400, n: '오른쪽 허리 근육' }); return o; },
+    pts() { const { lv, y } = levels(this), o = Object.entries(lv).map(([k, v]) => ({ k, x: CX, y: v, n: `${k} 극돌기 누르기` })); o.push({ k: 'SI_L', x: CX - 45, y: y(455), n: '왼쪽 엉치엉덩관절' }, { k: 'SI_R', x: CX + 45, y: y(455), n: '오른쪽 엉치엉덩관절' }, { k: 'cva_L', x: CX - 75, y: y(335), n: '왼쪽 늑척추각(주먹으로 두드림)' }, { k: 'cva_R', x: CX + 75, y: y(335), n: '오른쪽 늑척추각' }, { k: 'para_L', x: CX - 45, y: y(400), n: '왼쪽 허리 근육' }, { k: 'para_R', x: CX + 45, y: y(400), n: '오른쪽 허리 근육' }); return o; },
     draw(g) { backView(this, g, this.p.curve === 'list_R' ? 4 : 0); },
     exam(q) {
       const p = this.p, k = q.k, hit = (p.tender || []).includes(k) || (k.startsWith('cva') && p.cva === k.slice(-1)) || (k.startsWith('para') && p.para === k.slice(-1));
@@ -983,7 +1075,7 @@
       limb(g, [[top[0] + Math.sin(-a) * -10, top[1] + 10], [top[0] + Math.sin(-a) * -10, top[1] + 150]], 20, sk);
       g.fillStyle = '#5f7f9a'; g.fillRect(300, 300, 62, 70);
       note(g, '옆에서(앞 = 오른쪽)', 330, 30);
-      g.save(); g.translate(500, 0); g.scale(0.62, 0.62); g.translate(0, 80);
+      g.save(); g.translate(500, 0); g.scale(0.62, 0.62); g.translate(0, 150);
       backView(this, g, m === 'latR' ? deg : m === 'latL' ? -deg : 0, m === 'rotR' || m === 'rotL' ? deg : 0);
       g.restore();
       Object.keys(MOV).forEach((k, i) => note(g, MOV[k][1].replace('으로 ', ' ').replace('오른쪽', '오른').replace('왼쪽', '왼'), 560 + i * 110, 130));
@@ -1066,7 +1158,7 @@
       floor(g, 560); const { o, step } = fexpr(this), p = this.p;
       if (this.act && this.act.k.startsWith('chv') && p.chvostek && this.since() < 0.6) { const s = this.act.k.slice(-1); o['m' + s] = 0.5 * Math.sin(this.since() * 40); }
       if (o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 125, 380, 50 * o.puff * (w ? 0.4 : 1), 46 * o.puff * (w ? 0.4 : 1), this.skin()); }
-      face(this, g, 600, 280, 210, o);
+      face(this, g, 600, 280, 210, Object.assign({ code: true }, o));
       if (o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 110, 360, 55 * o.puff * (w ? 0.35 : 1), 45 * o.puff * (w ? 0.35 : 1), this.skin()); }
       rrect(g, 830, 40, 340, 46, 12, 'rgba(232,215,166,.92)'); txt(g, STEPS[step][1], 1000, 70, { size: 17, w: 600, c: '#1a2529', al: 'center' });
       if (this.act && this.act.k.startsWith('chv') && this.since() < 1) finger(g, this.act.k === 'chv_R' ? 430 : 770, 300, 1);

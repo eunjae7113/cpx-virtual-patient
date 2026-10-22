@@ -35,8 +35,8 @@
     since(k) { return this.act && (k == null || this.act.k === k) ? this.t - this.act.t0 : 1e9; }
     look() { return BodyEngine.look(this.av); }
     // 앞모습 실사 사진(tools/genai_body.py, 성인만). 없거나 아직 안 읽혔으면 null → 코드 그림
-    photo() {
-      const d = !this.noPhoto && ((BodyEngine.PHOTOS || {})[this.av] || {}).front;
+    photo(v) {
+      const d = !this.noPhoto && ((BodyEngine.PHOTOS || {})[this.av] || {})[v || 'front'];
       if (!d) return null;
       if (!d.img) { d.img = new Image(); d.img.onload = () => this.draw(); d.img.src = d.src; }
       return d.img.complete && d.img.naturalWidth ? d : null;
@@ -231,7 +231,7 @@
       const skin = this.skin(), L = this.look(), f = L.sex === 'f', kid = L.age === 'c' || L.age === 'nb';
       const sh = kid ? 126 : f ? 136 : L.age === 't' ? 140 : 150, wa = f ? 114 : kid ? 122 : 130, hip = f ? 142 : kid ? 122 : 135, hr = kid ? 1.15 : 1;
       g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2;
-      if (BodyEngine.draw) { g.restore(); BodyEngine.draw.face(this, g, CX, 80 - (hr - 1) * 40, 62 * hr, { hair: true }); g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; }
+      if (BodyEngine.draw) { g.restore(); BodyEngine.draw.face(this, g, CX, 80 - (hr - 1) * 40, 62 * hr, { hair: true, code: true }); g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; }
       else { g.beginPath(); g.ellipse(CX, 80, 52, 62, 0, 0, 7); g.fill(); g.stroke(); }
       g.fillRect(CX - (f || kid ? 22 : 26), 128, f || kid ? 44 : 52, 42);
       // 몸통: 어깨 → 허리 → 엉덩이
@@ -265,7 +265,7 @@
       g.fillText('환자 오른쪽', CX - 250, 590); g.fillText('환자 왼쪽', CX + 250, 590);
     }
     // 실사 사진 몸. 황달 등 색(tint)은 사진의 피부 부분에만 입힘(옷·머리카락 제외, '곱하기'로 결은 살림)
-    photoBody(g, ph) {
+    photoBody(g, ph, bare) {
       g.drawImage(ph.img, 0, 0, W, H);
       if (this.tint) {
         const m = BodyEngine.skinMask(ph), c = BodyEngine.scratch(0), t = c.getContext('2d');
@@ -273,6 +273,7 @@
         t.fillStyle = BodyEngine.mix('#ffffff', this.tint[0], Math.min(1, this.tint[1] * 2)); t.fillRect(0, 0, W, H); t.globalCompositeOperation = 'source-over';
         g.save(); g.globalCompositeOperation = 'multiply'; g.drawImage(c, 0, 0); g.restore();
       }
+      if (bare) return;   // 글자는 부르는 쪽이(뒷모습은 좌우가 반대)
       g.fillStyle = '#7f918d'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'center';
       g.fillText('환자 오른쪽', CX - 250, 590); g.fillText('환자 왼쪽', CX + 250, 590);
       g.fillStyle = 'rgba(232,215,166,.75)'; g.textAlign = 'right'; g.fillText('AI 생성 이미지', W - 16, H - 12);
