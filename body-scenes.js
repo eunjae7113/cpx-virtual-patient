@@ -153,6 +153,40 @@
     g.fillStyle = 'rgba(232,215,166,.75)'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'right'; g.fillText('AI 생성 이미지', W - 16, H - 12);
   }
 
+  // ---- 실사 손·다리(BodyEngine.LIMBS, tools/body_limbs.py — 피부 진찰실 정상 사진을 환자 오른손 방향으로 맞춘 것)
+  //      kind: 'palm' 오른손 손바닥 · 'dorsum' 오른손 손등 · 'legs' 앉은 정강이·발. 왼손은 좌우 뒤집어 그림
+  function limbPhoto(e, kind) {
+    const L = !e.noPhoto && (BE.LIMBS || {})[e.av], d = L && L[kind];
+    if (!d) return null;
+    if (!d.img) { d.img = new Image(); d.img.onload = () => e.draw(); d.img.src = d.src; }
+    return d.img.complete && d.img.naturalWidth ? Object.assign({ m: L.marks || {} }, d) : null;
+  }
+  // 사진의 (u, v) 부분(c = [u0, v0, u1, v1], 기본 전체)을 상자(x, y, w, h)에 그림. flip 이면 좌우 뒤집음. 사진 좌표 → 화면 좌표 함수 at 을 돌려줌
+  function limbBox(g, d, x, y, w, h, o = {}) {
+    const c = o.crop || [0, 0, 1, 1], iw = d.img.naturalWidth, ih = d.img.naturalHeight, flip = !!o.flip;
+    const at = (u, v) => [x + (flip ? 1 - (u - c[0]) / (c[2] - c[0]) : (u - c[0]) / (c[2] - c[0])) * w, y + (v - c[1]) / (c[3] - c[1]) * h];
+    g.save(); if (flip) { g.translate(2 * x + w, 0); g.scale(-1, 1); }
+    g.drawImage(d.img, c[0] * iw, c[1] * ih, (c[2] - c[0]) * iw, (c[3] - c[1]) * ih, x, y, w, h); g.restore();
+    return at;
+  }
+  // 화면 (x, y) 둘레 반지름 r 을 k 배로 부풀림(지금 그려진 화면을 잘라 확대해 가장자리를 흐리게 겹침) — 관절 부기·부종
+  function swell(g, x, y, rx, ry, k) {
+    if (k <= 0) return;
+    const c = BE.scratch(4), t = c.getContext('2d'), s = 1 + k;
+    t.clearRect(0, 0, W, H); t.save(); t.translate(x, y); t.scale(s, s); t.translate(-x, -y); t.drawImage(g.canvas, 0, 0, W, H); t.restore();
+    t.globalCompositeOperation = 'destination-in'; t.save(); t.translate(x, y); t.scale(1, ry / rx);
+    const gr = t.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    t.fillStyle = gr; t.fillRect(-rx, -rx, 2 * rx, 2 * rx); t.restore(); t.globalCompositeOperation = 'source-over';
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(c, 0, 0); g.restore();
+  }
+  // 붉은 기·멍 등 색을 흐린 얼룩으로 곱함(사진 결이 살아 있게)
+  function tintSpot(g, x, y, rx, ry, rgb, a) {
+    if (a <= 0) return;
+    g.save(); g.globalCompositeOperation = 'multiply'; g.translate(x, y); g.scale(1, ry / rx);
+    const gr = g.createRadialGradient(0, 0, rx * 0.25, 0, 0, rx); gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+  }
+
   // 굵기가 점점 바뀌는 팔다리(마디마다 굵기 ws[i]). 관절은 둥글게 이어 붙임
   function taper(g, pts, ws, col) {
     // 마디 사다리꼴·관절 원을 하나씩 칠함(한 경로로 그리면 겹친 곳이 지워짐). 먼저 조금 크게 어둡게 → 테두리
@@ -288,6 +322,7 @@
 
   // 공용으로 다른 장면에서도 씀
   BE.draw = { ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
+  BE.draw.limbPhoto = limbPhoto; BE.draw.limbBox = limbBox; BE.draw.swell = swell; BE.draw.tintSpot = tintSpot;
 
   // ================================================================ 의식
   const EYE0 = { alert: 1, confused: 1, drowsy: 0.3, stupor: 0, coma: 0 };
@@ -696,20 +731,44 @@
   }
   function sinceBeat(e) { const arr = beats(e.p), tt = e.t % 60; let last = arr[0]; for (const b of arr) { if (b > tt) break; last = b; } return tt - last; }
   const PULSE = { 'R.rad': [440, 215, '오른쪽 요골동맥(손목)'], 'L.rad': [760, 215, '왼쪽 요골동맥(손목)'], 'R.dp': [430, 455, '오른쪽 족배동맥(발등)'], 'L.dp': [770, 455, '왼쪽 족배동맥(발등)'] };
+  // 실사 손·다리가 있으면: 왼쪽에 양 손바닥(손목 맥박), 오른쪽에 양 발(발등 맥박, 다리 사진이 없는 외형은 코드 발). 지점은 사진의 손목·발등
+  function pulseLay(e) {
+    const D = BE.draw, palm = D.limbPhoto(e, 'palm'), pm = palm && palm.m.palm;
+    if (!pm || !pm.rad) return null;
+    const legs = D.limbPhoto(e, 'legs'), lm = legs && legs.m.legs;
+    const PB = { R: [80, 30, 245, 490], L: [345, 30, 245, 490] }, FB = [650, 165, 520, 377], FC = [0.12, 0.42, 0.88, 0.97];
+    const pts = {}, foot = (k) => [800 + (k === 'L' ? 220 : 0), 390];
+    for (const [k] of SIDES) {
+      const b = PB[k]; pts[k + '.rad'] = [b[0] + (k === 'L' ? 1 - pm.rad[0] : pm.rad[0]) * b[2], b[1] + pm.rad[1] * b[3]];
+      if (lm) { const f = lm[k].foot; pts[k + '.dp'] = [FB[0] + (f[0] - FC[0]) / (FC[2] - FC[0]) * FB[2], FB[1] + (f[1] - FC[1]) / (FC[3] - FC[1]) * FB[3]]; }
+      else { const [x, y] = foot(k); pts[k + '.dp'] = [x, y - 20]; }
+    }
+    return {
+      pts, draw(g) {
+        for (const [k] of SIDES) { const b = PB[k]; D.limbBox(g, palm, b[0], b[1], b[2], b[3], { flip: k === 'L' }); }
+        if (legs) D.limbBox(g, legs, FB[0], FB[1], FB[2], FB[3], { crop: FC });
+        else for (const [k, d] of SIDES) { const [x, y] = foot(k); D.footShape(g, x, y, 55, 92, -d, e.skin()); }
+        note(g, '오른손', 202, 545); note(g, '왼손', 467, 545); note(g, '손바닥을 위로 한 양 손목(엄지 쪽)', 335, 585);
+        note(g, '양 발등', FB[0] + FB[2] / 2, 585);
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+      },
+    };
+  }
   BE.prototype.strength = function (k) { const [side, w] = k.split('.'), p = this.p; return ((p[side] || {})[w] == null ? 1 : p[side][w]) * (p.amp || 1); };
   S.pulse = {
-    pts() { return Object.entries(PULSE).map(([k, v]) => ({ k, x: v[0], y: v[1], n: v[2] + ' — 맥박 세기' })); },
+    pts() { const L = pulseLay(this); return Object.entries(PULSE).map(([k, v]) => { const q = L ? L.pts[k] : v; return { k, x: q[0], y: q[1], n: v[2] + ' — 맥박 세기' }; }); },
     hint: '손목·발등 동그라미를 누르고 초시계로 맥박을 세어 보세요',
     draw(g) {
-      const sk = this.skin(); floor(g, 560);
-      for (const d of [-1, 1]) {
+      const sk = this.skin(), L = pulseLay(this); floor(g, 560);
+      if (L) L.draw(g);
+      else for (const d of [-1, 1]) {
         limb(g, [[CX + d * 560, 200], [CX + d * 130, 200]], 70, sk); ell(g, CX + d * 95, 200, 48, 40, sk, LINE);
         g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(CX + d * 130, 330); g.quadraticCurveTo(CX + d * 230, 330, CX + d * 230, 420); g.lineTo(CX + d * 215, 540); g.quadraticCurveTo(CX + d * 170, 560, CX + d * 125, 540); g.lineTo(CX + d * 115, 420); g.closePath(); g.fill(); g.stroke();
       }
-      note(g, '손바닥을 위로 한 양 손목(엄지 쪽 = 안쪽)', CX, 290); note(g, '양 발등', CX, 590);
+      if (!L) { note(g, '손바닥을 위로 한 양 손목(엄지 쪽 = 안쪽)', CX, 290); note(g, '양 발등', CX, 590); }
       stopwatch(g, this.t);
       if (this.sel && PULSE[this.sel.k]) {
-        const v = PULSE[this.sel.k], s = this.strength(this.sel.k), kb = sinceBeat(this);
+        const v = L ? L.pts[this.sel.k] : PULSE[this.sel.k], s = this.strength(this.sel.k), kb = sinceBeat(this);
         if (s > 0.05) { const sz = kb < 0.25 ? Math.sin(kb / 0.25 * Math.PI) : 0, m = Math.min(s, 1.6); ell(g, v[0], v[1], 14 + sz * 16 * m, 14 + sz * 16 * m, `rgba(232,120,110,${0.2 + 0.5 * sz})`); }
         finger(g, v[0], v[1], 1);
       }
@@ -733,12 +792,62 @@
   // ================================================================ 부종 — 누르면 자국(함요)이 남았다가 회복
   const EDEMA = { 'R.shin': [430, 330, '오른쪽 정강이'], 'L.shin': [770, 330, '왼쪽 정강이'], 'R.foot': [440, 500, '오른쪽 발등'], 'L.foot': [760, 500, '왼쪽 발등'] };
   const REC = { 0: 0, 1: 4, 2: 15, 3: 40, 4: 90 };
+  // 실사 다리(앉은 정강이·발, 다리 사진이 있는 외형만). 지점은 사진의 정강이 아래 1/3·발등
+  function edemaLay(e) {
+    const D = BE.draw, legs = D.limbPhoto(e, 'legs'), lm = legs && legs.m.legs;
+    if (!lm) return null;
+    const bx = 330, by = 10, bw = 560, at = (u, v) => [bx + u * bw, by + v * bw], pts = {};
+    for (const [k] of SIDES) { pts[k + '.shin'] = at(...lm[k].shin); pts[k + '.foot'] = at(...lm[k].foot); }
+    return { legs, lm, at, pts, box: [bx, by, bw, bw] };
+  }
+  // 다리 사진 한쪽(x0~x1)을 cx 둘레로 가로 s 배 넓혀 y0(0) → y1~y2(1) → y3(0) 높이에만 겹침 — 부종으로 부은 다리
+  function legWiden(g, L, x0, x1, cx, ys, s) {
+    if (s <= 1.001) return;
+    const c = BE.scratch(5), t = c.getContext('2d'), [y0, y1, y2, y3] = ys, b = L.box;
+    t.clearRect(0, 0, W, H); t.save(); t.beginPath(); t.rect(x0, 0, x1 - x0, H); t.clip();
+    t.translate(cx, 0); t.scale(s, 1); t.translate(-cx, 0); BE.draw.limbBox(t, L.legs, b[0], b[1], b[2], b[3]); t.restore();
+    t.globalCompositeOperation = 'destination-in';
+    const gr = t.createLinearGradient(0, y0, 0, y3), f = (y) => clamp((y - y0) / (y3 - y0), 0, 1);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(f(y1), 'rgba(0,0,0,1)'); gr.addColorStop(f(y2), 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    t.fillStyle = gr; t.fillRect(x0, y0, x1 - x0, y3 - y0); t.globalCompositeOperation = 'source-over';
+    g.drawImage(c, 0, 0);
+  }
+  // 다리 사진의 피부(불투명한 곳)에만 색을 곱함: 정체성 피부염(갈색)·긴장된 다리(붉은색). ys = [0 → 1 → 1 → 0 높이]
+  function legTint(g, L, x0, x1, ys, rgb, a) {
+    const c = BE.scratch(5), t = c.getContext('2d'), b = L.box, [y0, y1, y2, y3] = ys, f = (y) => clamp((y - y0) / (y3 - y0), 0, 1);
+    t.clearRect(0, 0, W, H); BE.draw.limbBox(t, L.legs, b[0], b[1], b[2], b[3]); t.globalCompositeOperation = 'source-in';
+    const gr = t.createLinearGradient(0, y0, 0, y3);
+    gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(f(y1), `rgba(${rgb},${a})`); gr.addColorStop(f(y2), `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    t.fillStyle = gr; t.fillRect(x0, y0, x1 - x0, y3 - y0);
+    t.globalCompositeOperation = 'destination-in'; t.fillStyle = '#000'; t.fillRect(x0, y0, x1 - x0, y3 - y0); t.globalCompositeOperation = 'source-over';
+    g.save(); g.globalCompositeOperation = 'multiply'; g.drawImage(c, 0, 0); g.restore();
+  }
+  function edemaPhoto(e, g, L) {
+    const p = e.p, b = L.box, mid = L.at((L.lm.R.cx + L.lm.L.cx) / 2, 0)[0];
+    BE.draw.limbBox(g, L.legs, b[0], b[1], b[2], b[3]);
+    for (const [k] of SIDES) {
+      const m = L.lm[k], gr = p[k] || 0, x0 = k === 'R' ? b[0] : mid, x1 = k === 'R' ? mid : b[0] + b[2], cx = L.at(m.cx, 0)[0];
+      const yk = L.at(0, m.knee)[1], ya = L.at(0, m.ankle)[1], yb = b[1] + b[3];
+      legWiden(g, L, x0, x1, cx, [yk + (ya - yk) * 0.25, ya - 10, yb - 40, yb], 1 + gr * 0.045);   // 오목부종: 발목·발등 쪽
+      if (p.calf === k) legWiden(g, L, x0, x1, cx, [yk, yk + (ya - yk) * 0.3, yk + (ya - yk) * 0.6, ya], 1.09);   // 종아리만 굵어짐
+      if (p.stasis) legTint(g, L, x0, x1, [yk + (ya - yk) * 0.55, yk + (ya - yk) * 0.85, ya + 5, ya + 40], '150,95,60', 0.42);   // 발목 위 1/3 갈색
+      if (p.tense === k) {   // 종아리가 팽팽하게 부음: 굵게 + 붉게 + 번들거림
+        legWiden(g, L, x0, x1, cx, [yk, yk + (ya - yk) * 0.25, yk + (ya - yk) * 0.7, ya], 1.1);
+        legTint(g, L, x0, x1, [yk, yk + (ya - yk) * 0.25, yk + (ya - yk) * 0.65, ya + 10], '235,150,135', 0.32);
+        const gl = g.createRadialGradient(cx - 14, (yk + ya) / 2 - 20, 2, cx - 14, (yk + ya) / 2 - 20, 60); gl.addColorStop(0, 'rgba(255,255,255,.1)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gl; g.beginPath(); g.ellipse(cx - 14, (yk + ya) / 2 - 20, 18, 60, 0, 0, 7); g.fill();
+      }
+      note(g, k === 'R' ? '오른쪽 다리' : '왼쪽 다리', cx, 585);
+    }
+    txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+  }
   S.edema = {
-    pts() { return Object.entries(EDEMA).map(([k, v]) => ({ k, x: v[0], y: v[1], n: v[2] + ' — 5초 눌렀다 떼기' })); },
+    pts() { const L = edemaLay(this); return Object.entries(EDEMA).map(([k, v]) => { const q = L ? L.pts[k] : v; return { k, x: q[0], y: q[1], n: v[2] + ' — 5초 눌렀다 떼기' }; }); },
     hint: '정강이·발등 동그라미를 눌러 자국이 남는지 보세요',
     draw(g) {
-      const p = this.p, sk = this.skin(); floor(g, 560);
-      for (const [k, d] of SIDES) {
+      const p = this.p, sk = this.skin(), L = edemaLay(this); floor(g, 560);
+      if (L) edemaPhoto(this, g, L);
+      else for (const [k, d] of SIDES) {
         const x = CX + d * 170, gr = p[k] || 0, sw = gr * 7, calf = p.calf === k ? 18 : 0;
         g.fillStyle = p.tense === k ? mix(sk, '#d04a40', 0.4) : sk; g.strokeStyle = LINE; g.lineWidth = 2;
         g.beginPath(); g.moveTo(x - 60 - sw, 40); g.quadraticCurveTo(x - 85 - sw - calf, 180, x - 40 - sw, 420); g.lineTo(x - 45 - sw, 470); g.quadraticCurveTo(x - 60 - sw, 540, x + d * 10, 545); g.quadraticCurveTo(x + 80 + sw, 540, x + 50 + sw, 470); g.lineTo(x + 40 + sw, 420); g.quadraticCurveTo(x + 85 + sw + calf, 180, x + 60 + sw, 40); g.closePath(); g.fill(); g.stroke();
@@ -752,10 +861,16 @@
         note(g, k === 'R' ? '오른쪽 다리' : '왼쪽 다리', x, 585);
       }
       if (this.act && EDEMA[this.act.k]) {
-        const side = this.act.k.split('.')[0], v = EDEMA[this.act.k], kk = this.since(), gr = p.nonpit || p.tense === side ? 0 : p[side] || 0;
+        const side = this.act.k.split('.')[0], v = L ? L.pts[this.act.k] : EDEMA[this.act.k], kk = this.since(), gr = p.nonpit || p.tense === side ? 0 : p[side] || 0;
         const py = v[1] + 34; // 동그라미 바로 아래를 누름(자국이 동그라미에 가리지 않게)
         if (kk < 2) finger(g, v[0], py, ease(kk / 0.5));
-        else if (gr) { const fade = clamp(1 - (kk - 2) / REC[Math.min(4, gr)], 0, 1); if (fade > 0) ell(g, v[0], py, 10 + gr * 4, 7 + gr * 3, `rgba(70,30,20,${0.55 * fade})`, `rgba(40,15,10,${0.5 * fade})`, 1.5); }
+        else if (gr) {
+          const fade = clamp(1 - (kk - 2) / REC[Math.min(4, gr)], 0, 1);
+          if (fade > 0 && L) {   // 사진: 움푹한 그늘(곱하기) + 아래 가장자리 밝은 테
+            BE.draw.tintSpot(g, v[0], py, 12 + gr * 4, 8 + gr * 3, '110,60,45', 0.6 * fade);
+            g.strokeStyle = `rgba(255,235,220,${0.25 * fade})`; g.lineWidth = 2; g.beginPath(); g.ellipse(v[0], py + 2, 10 + gr * 4, 6 + gr * 3, 0, 0.2, Math.PI - 0.2); g.stroke();
+          } else if (fade > 0) ell(g, v[0], py, 10 + gr * 4, 7 + gr * 3, `rgba(70,30,20,${0.55 * fade})`, `rgba(40,15,10,${0.5 * fade})`, 1.5);
+        }
       }
       if (p.face) { ell(g, 1080, 120, 80, 80, '#1a2529', 'rgba(150,200,190,.35)'); face(this, g, 1080, 125, 55, { puffy: 1.2 }); note(g, '얼굴', 1080, 222); }
     },
@@ -942,6 +1057,40 @@
   const NORM = { shoulder: [180, '어깨 벌리기'], elbow: [150, '팔꿈치 굽히기'], wrist: [70, '손목 젖히기'], hip: [120, '고관절 굽히기'], knee: [135, '무릎 굽히기'], ankle: [50, '발목 움직이기'], mcp: [90, '손가락 마디 굽히기'], pip: [100, '손가락 가운데 마디 굽히기'], mtp1: [70, '엄지발가락 젖히기'] };
   const JN = { shoulder: '어깨', elbow: '팔꿈치', wrist: '손목', hip: '엉덩이(고관절)', knee: '무릎', ankle: '발목', mcp: '손가락 첫마디(MCP)', pip: '손가락 가운데 마디(PIP)', mtp1: '엄지발가락 뿌리' };
   function jointsOf(e) { return e.p.joints || {}; }
+  // 실사 손등·발(관절 확대): 손등은 오른손 사진, 왼손은 뒤집음. 발은 다리 사진의 발 부분(없는 외형은 코드 발)
+  const HB = { R: [730, 6, 175, 350], L: [970, 6, 175, 350] }, FTB = [745, 374, 390, 188], FTC = [0.2, 0.68, 0.8, 0.97];
+  function jointLay(e) {
+    const D = BE.draw, dor = D.limbPhoto(e, 'dorsum'), dm = dor && dor.m.dorsum;
+    if (!dm || !dm.mcp) return null;
+    const legs = D.limbPhoto(e, 'legs'), lm = legs && legs.m.legs, pts = {}, rows = {};
+    const hat = (k, u, v) => { const b = HB[k]; return [b[0] + (k === 'L' ? 1 - u : u) * b[2], b[1] + v * b[3]]; };
+    const fat = (u, v) => [FTB[0] + (u - FTC[0]) / (FTC[2] - FTC[0]) * FTB[2], FTB[1] + (v - FTC[1]) / (FTC[3] - FTC[1]) * FTB[3]];
+    for (const [k, d] of SIDES) {
+      for (const j of ['mcp', 'pip']) {
+        const r = dm[j], q = [0, 1, 2, 3].map(i => hat(k, r[0] + (r[2] - r[0]) * i / 3, r[1] + (r[3] - r[1]) * i / 3));
+        rows[j + '_' + k] = q; pts[j + '_' + k] = [(q[1][0] + q[2][0]) / 2, (q[1][1] + q[2][1]) / 2];
+      }
+      pts['mtp1_' + k] = lm ? fat(...lm[k].mtp) : [820 + (d < 0 ? 0 : 240) - d * 30, 390];
+    }
+    return { dor, legs, lm, pts, rows, fat };
+  }
+  function jointPhoto(e, g, L, J) {
+    const D = BE.draw, sk = e.skin();
+    for (const [k] of SIDES) { const b = HB[k]; D.limbBox(g, L.dor, b[0], b[1], b[2], b[3], { flip: k === 'L' }); }
+    for (const [k] of SIDES) for (const j of ['mcp', 'pip']) {   // 마디 부기(부풀림)·붉은 기
+      const v = J[j + '_' + k] || {}; if (!(v.sw || v.red)) continue;
+      for (const [x, y] of L.rows[j + '_' + k]) { D.swell(g, x, y, 20, 16, 0.15 + (v.sw || 0) * 0.2); D.tintSpot(g, x, y, 16, 14, '215,90,80', clamp(0.1 + (v.red || 0) * 0.6, 0, 0.55)); }
+    }
+    note(g, '오른손(손등)', 818, 364); note(g, '왼손(손등)', 1058, 364);
+    if (L.legs) D.limbBox(g, L.legs, FTB[0], FTB[1], FTB[2], FTB[3], { crop: FTC });
+    for (const [k, d] of SIDES) {
+      const v = J['mtp1_' + k] || {}, x = 820 + (d < 0 ? 0 : 240);
+      if (!L.legs) { footShape(g, x, 460, 55, 92, -d, sk); if (v.sw || v.red) ell(g, x - d * 30, 390, 20 * (0.8 + (v.sw || 0) * 0.5), 18, mix(sk, '#c8483e', clamp((v.red || 0) * 0.8, 0, 0.7)), LINE); }
+      else if (v.sw || v.red) { const [px, py] = L.pts['mtp1_' + k]; D.swell(g, px, py, 20, 16, 0.12 + (v.sw || 0) * 0.15); D.tintSpot(g, px, py, 22, 18, '215,80,70', clamp((v.red || 0) * 0.7, 0, 0.65)); }
+    }
+    note(g, '양발(앞에서)', 940, 572);
+    txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+  }
   function jointScene(e, g) {
     const p = e.p, J = jointsOf(e), sk = e.skin(); floor(g, 575);
     const F = figure(e, g, 300, 40, 520, { legR: p.leg === 'short_ext_R' ? 5 : 0, footOutR: p.leg === 'short_ext_R', varus: (J.knee_R || {}).deform === 'varus' || (J.knee_L || {}).deform === 'varus' });
@@ -952,7 +1101,8 @@
       if (v.bursa) ell(g, pos[0] + (jk.endsWith('R') ? -14 : 14), pos[1] + 6, 16, 14, mix(sk, '#c8483e', 0.4), LINE);
       if (v.deform === 'fork') { g.strokeStyle = LINE; g.lineWidth = 3; g.beginPath(); g.arc(pos[0], pos[1] - 4, 16, 3.6, 5.8); g.stroke(); }
     }
-    const hp = {};
+    const hp = {}, PL = jointLay(e);
+    if (PL) { jointPhoto(e, g, PL, J); return { F, hp }; }
     for (const [k, d] of SIDES) hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 200, 110, d, { mcp: J['mcp_' + k], pip: J['pip_' + k], ulnar: (J['mcp_' + k] || {}).deform === 'ulnar' });
     note(g, '오른손(손등)', 820, 300); note(g, '왼손(손등)', 1060, 300);
     for (const [k, d] of SIDES) {
@@ -967,6 +1117,8 @@
     const out = [];
     const pos = { shoulder: [[300 - 67.6, 133.6], [300 + 67.6, 133.6]], elbow: [[300 - 83.2, 216.8], [300 + 83.2, 216.8]], wrist: [[300 - 93.6, 289.6], [300 + 93.6, 289.6]], hip: [[300 - 36.4, 310.4], [300 + 36.4, 310.4]], knee: [[300 - 39, 419.6], [300 + 39, 419.6]], ankle: [[300 - 36.4, 528.8], [300 + 36.4, 528.8]] };
     for (const [j, xy] of Object.entries(pos)) SIDES.forEach(([k], i) => out.push({ k: j + '_' + k, x: xy[i][0], y: xy[i][1], n: `${k === 'R' ? '오른쪽' : '왼쪽'} ${JN[j]}` }));
+    const PL = jointLay(e);
+    if (PL) { SIDES.forEach(([k]) => ['mcp', 'pip', 'mtp1'].forEach(j => out.push({ k: j + '_' + k, x: PL.pts[j + '_' + k][0], y: PL.pts[j + '_' + k][1], n: `${k === 'R' ? (j === 'mtp1' ? '오른발' : '오른손') : (j === 'mtp1' ? '왼발' : '왼손')} ${JN[j]}` }))); return out; }
     SIDES.forEach(([k, d]) => { const x = 820 + (d < 0 ? 0 : 240); out.push({ k: 'mcp_' + k, x: x + d * 5, y: 168, n: `${k === 'R' ? '오른손' : '왼손'} ${JN.mcp}` }, { k: 'pip_' + k, x: x + d * 5, y: 134, n: `${k === 'R' ? '오른손' : '왼손'} ${JN.pip}` }, { k: 'mtp1_' + k, x: x - d * 30, y: 390, n: `${k === 'R' ? '오른발' : '왼발'} ${JN.mtp1}` }); });
     return out;
   }
