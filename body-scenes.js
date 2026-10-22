@@ -536,13 +536,18 @@
       g.translate(CX, 470); g.scale(1 + b[k] * 0.035, 1 + b[k] * 0.012); g.translate(-CX, -470); e.body(g); g.restore();
     }
     const p = e.p;
-    if (p.access) { g.strokeStyle = `rgba(90,50,30,${0.15 + 0.55 * b.a})`; g.lineWidth = 3; for (const d of [-1, 1]) { g.beginPath(); g.moveTo(CX + d * 22, 132); g.lineTo(CX + d * 6, 172); g.stroke(); } }
+    const pm = (e.photo() || {}).marks;   // 실사 사진이면 목(턱~쇄골) 위에 그림
+    if (p.access) { g.strokeStyle = `rgba(90,50,30,${0.15 + 0.55 * b.a})`; g.lineWidth = 3; for (const d of [-1, 1]) { g.beginPath(); if (pm) { g.moveTo(CX + d * 30, pm.chin + 2); g.lineTo(CX + d * 12, pm.clav + 2); } else { g.moveTo(CX + d * 22, 132); g.lineTo(CX + d * 6, 172); } g.stroke(); } }
     if (p.retract && b.a > 0.2) {
       g.strokeStyle = `rgba(70,30,20,${0.5 * b.a})`; g.lineWidth = 2.5;
       for (const d of [-1, 1]) { for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(CX + d * 30, 225 + i * 28); g.quadraticCurveTo(CX + d * 75, 235 + i * 28, CX + d * 115, 228 + i * 28); g.stroke(); } g.beginPath(); g.moveTo(CX + d * 15, 352); g.quadraticCurveTo(CX + d * 70, 395, CX + d * 118, 372); g.stroke(); }
       ell(g, CX, 176, 14, 7 * b.a, `rgba(70,30,20,${0.45 * b.a})`);
     }
-    const tx = CX + (p.trachea === 'L' ? 9 : p.trachea === 'R' ? -9 : 0);
+    const tx = CX + (p.trachea === 'L' ? 9 : p.trachea === 'R' ? -9 : 0), ph = e.photo();
+    if (ph) {   // 실사 사진: 얼굴은 사진 그대로, 기관 위치만 목에 표시(치우쳤을 때)
+      if (p.trachea) { const m = ph.marks; g.strokeStyle = 'rgba(90,50,30,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - 9, m.chin + 3); g.lineTo(tx - 9, m.clav); g.moveTo(tx + 9, m.chin + 3); g.lineTo(tx + 9, m.clav); g.stroke(); }
+      return;
+    }
     g.strokeStyle = 'rgba(90,50,30,.3)'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - 9, 140); g.lineTo(tx - 9, 172); g.moveTo(tx + 9, 140); g.lineTo(tx + 9, 172); g.stroke();
     face(e, g, CX, 80, 60, { cyan: p.cyan, pursed: p.pursed && b.ph > 0.4, flare: p.nasal ? b.a * 1.2 : 0, open: p.pattern === 'kussmaul' ? b.a * 0.3 : 0 });
   }
@@ -709,13 +714,16 @@
     e.body(g);
     const sk = e.skin();
     const d = p.dist || 0, pr = p.preg || 0;
-    if (d || p.flank) { ell(g, CX, 450, 135 + d * 30 + (p.flank || 0) * 20, 95 + d * 25, sk, LINE); const gr = g.createRadialGradient(CX - 30, 410, 10, CX, 450, 150); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.ellipse(CX, 450, 135 + d * 30, 95 + d * 25, 0, 0, 7); g.fill(); }
-    if (pr) { ell(g, CX, 440, 110 * pr + 20, 100 * pr + 10, sk, LINE); ell(g, CX - 30, 405, 40, 26, 'rgba(255,255,255,.15)'); g.strokeStyle = 'rgba(90,50,30,.25)'; g.beginPath(); g.moveTo(CX, 380); g.lineTo(CX, 520); g.stroke(); }
+    const ph = e.photo();   // 실사 사진이면 납작한 타원 대신 사진의 배를 볼록하게 부풀림
+    if (ph && (d || p.flank || pr)) e.photoBulge(g, CX, 440, 175 + d * 30 + (p.flank || 0) * 20 + pr * 20, 110 + d * 25 + pr * 30, 0.12 + d * 0.18 + (p.flank || 0) * 0.08 + pr * 0.3);
+    if (ph && (d || p.flank)) { const gr = g.createRadialGradient(CX - 30, 410, 10, CX, 450, 150); gr.addColorStop(0, 'rgba(255,255,255,.12)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.ellipse(CX, 450, 135 + d * 30, 95 + d * 25, 0, 0, 7); g.fill(); }
+    else if (d || p.flank) { ell(g, CX, 450, 135 + d * 30 + (p.flank || 0) * 20, 95 + d * 25, sk, LINE); const gr = g.createRadialGradient(CX - 30, 410, 10, CX, 450, 150); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.ellipse(CX, 450, 135 + d * 30, 95 + d * 25, 0, 0, 7); g.fill(); }
+    if (pr && !ph) { ell(g, CX, 440, 110 * pr + 20, 100 * pr + 10, sk, LINE); ell(g, CX - 30, 405, 40, 26, 'rgba(255,255,255,.15)'); g.strokeStyle = 'rgba(90,50,30,.25)'; g.beginPath(); g.moveTo(CX, 380); g.lineTo(CX, 520); g.stroke(); }
     if (p.scaphoid) { const gr = g.createRadialGradient(CX, 440, 10, CX, 440, 110); gr.addColorStop(0, `rgba(40,20,10,${0.3 * p.scaphoid})`); gr.addColorStop(1, 'rgba(40,20,10,0)'); g.fillStyle = gr; g.beginPath(); g.ellipse(CX, 440, 120, 80, 0, 0, 7); g.fill(); }
     if (p.mass && ABD[p.mass]) { const [x, y] = ABD[p.mass]; ell(g, x, y + (p.mass === 'Supra' ? 10 : 0), 46, 38, 'rgba(255,255,255,.14)', 'rgba(0,0,0,.2)'); }
     if (p.bladder) ell(g, CX, 500, 70, 45, 'rgba(255,255,255,.14)', 'rgba(0,0,0,.2)');
     if (p.ing) { const x = CX + (p.ing === 'R' ? -70 : 70); ell(g, x, 528, 26, 16, 'rgba(255,255,255,.18)', 'rgba(0,0,0,.25)'); }
-    if (p.caput) { g.strokeStyle = 'rgba(60,80,140,.55)'; g.lineWidth = 3; for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; g.beginPath(); g.moveTo(CX + Math.cos(a) * 14, 450 + Math.sin(a) * 14); g.bezierCurveTo(CX + Math.cos(a + 0.4) * 40, 450 + Math.sin(a + 0.4) * 40, CX + Math.cos(a - 0.3) * 60, 450 + Math.sin(a - 0.3) * 60, CX + Math.cos(a) * 85, 450 + Math.sin(a) * 75); g.stroke(); } }
+    if (p.caput) { g.strokeStyle = ph ? 'rgba(60,80,140,.4)' : 'rgba(60,80,140,.55)'; g.lineWidth = ph ? 2 : 3; for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; g.beginPath(); g.moveTo(CX + Math.cos(a) * 14, 450 + Math.sin(a) * 14); g.bezierCurveTo(CX + Math.cos(a + 0.4) * 40, 450 + Math.sin(a + 0.4) * 40, CX + Math.cos(a - 0.3) * 60, 450 + Math.sin(a - 0.3) * 60, CX + Math.cos(a) * 85, 450 + Math.sin(a) * 75); g.stroke(); } }
     if (p.umb) ell(g, CX, 448, 11, 10, mix(sk, '#ffffff', 0.15), 'rgba(0,0,0,.35)');
     if (p.scar === 'pfann') { g.strokeStyle = 'rgba(160,90,80,.8)'; g.lineWidth = 3; g.beginPath(); g.moveTo(CX - 70, 515); g.quadraticCurveTo(CX, 528, CX + 70, 515); g.stroke(); }
     if (p.wound) rrect(g, CX + 40, 470, 60, 40, 5, '#efefe8', 'rgba(0,0,0,.25)');

@@ -16,7 +16,8 @@
     lung: () => Object.entries(LUNG).map(([k, p]) => ({ k, x: p[0], y: p[1], n: { RU: '오른쪽 위', LU: '왼쪽 위', RM: '오른쪽 가운데', LM: '왼쪽 가운데', RL: '오른쪽 아래', LL: '왼쪽 아래' }[k] + ' 폐야' })),
     perc: () => POINTS.lung(), cpalp: () => POINTS.lung(),
     heart: () => Object.entries(HEART).map(([k, p]) => ({ k, x: p[0], y: p[1], n: p[2] })),
-    carotid: () => [{ k: 'R', x: CAROTID.R[0], y: CAROTID.R[1], n: '오른쪽 경동맥' }, { k: 'L', x: CAROTID.L[0], y: CAROTID.L[1], n: '왼쪽 경동맥' }],
+    carotid() { const ph = this.photo(), y = ph ? Math.round((ph.marks.chin + ph.marks.clav) / 2) : CAROTID.R[1];   // 실사 사진이면 사진의 목 높이
+      return [{ k: 'R', x: CAROTID.R[0], y, n: '오른쪽 경동맥' }, { k: 'L', x: CAROTID.L[0], y, n: '왼쪽 경동맥' }]; },
     bowel: () => [{ k: 'Umb', x: 600, y: 445, n: '배꼽 주위' }, { k: 'RLQ', x: 540, y: 500, n: '오른쪽 아래배' }],
     aperc: () => Object.entries(ABD).map(([k, p]) => ({ k, x: p[0], y: p[1], n: p[2] })),
     apalp: () => POINTS.aperc(), liver: () => [{ k: 'RUQ', x: 535, y: 395, n: '오른쪽 갈비뼈 아래' }], spleen: () => [{ k: 'LUQ', x: 665, y: 395, n: '왼쪽 갈비뼈 아래' }],
@@ -29,10 +30,17 @@
     setAvatar(a) { this.av = a || 'm_m'; }
     setTask(task, p) { this.stop(); this.task = task; this.p = p || {}; this.sel = null; this.act = null; this.felt = ''; this.said = null; this.draw(); }
     scene() { return (BodyEngine.SCENES || {})[this.task]; }
-    points() { const sc = this.scene(); return sc && sc.pts ? sc.pts.call(this) : (POINTS[this.task] || (() => []))(); }
+    points() { const sc = this.scene(); return sc && sc.pts ? sc.pts.call(this) : (POINTS[this.task] || (() => [])).call(this); }
     // 마지막 진찰 동작(k = 지점 키, 'act' = 진찰하기)에서 지난 초. 없으면 아주 큰 수
     since(k) { return this.act && (k == null || this.act.k === k) ? this.t - this.act.t0 : 1e9; }
     look() { return BodyEngine.look(this.av); }
+    // 앞모습 실사 사진(tools/genai_body.py, 성인만). 없거나 아직 안 읽혔으면 null → 코드 그림
+    photo() {
+      const d = !this.noPhoto && ((BodyEngine.PHOTOS || {})[this.av] || {}).front;
+      if (!d) return null;
+      if (!d.img) { d.img = new Image(); d.img.onload = () => this.draw(); d.img.src = d.src; }
+      return d.img.complete && d.img.naturalWidth ? d : null;
+    }
     skin() {
       const s = this.look().skin;
       return this.tint ? BodyEngine.mix(s, this.tint[0], this.tint[1]) : s;
@@ -218,6 +226,8 @@
     }
     // 앞모습 몸통(청진·타진·복부 그림 공통). 외형(성별·나이)에 따라 어깨·허리 폭, 머리 크기, 가슴 모양이 바뀜. 진찰 지점 좌표는 그대로
     body(g) {
+      const ph = this.photo();
+      if (ph) { this.photoBody(g, ph); return; }
       const skin = this.skin(), L = this.look(), f = L.sex === 'f', kid = L.age === 'c' || L.age === 'nb';
       const sh = kid ? 126 : f ? 136 : L.age === 't' ? 140 : 150, wa = f ? 114 : kid ? 122 : 130, hip = f ? 142 : kid ? 122 : 135, hr = kid ? 1.15 : 1;
       g.save(); g.fillStyle = skin; g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2;
@@ -254,6 +264,29 @@
       g.fillStyle = '#7f918d'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'center';
       g.fillText('환자 오른쪽', CX - 250, 590); g.fillText('환자 왼쪽', CX + 250, 590);
     }
+    // 실사 사진 몸. 황달 등 색(tint)은 사진의 피부 부분에만 입힘(옷·머리카락 제외, '곱하기'로 결은 살림)
+    photoBody(g, ph) {
+      g.drawImage(ph.img, 0, 0, W, H);
+      if (this.tint) {
+        const m = BodyEngine.skinMask(ph), c = BodyEngine.scratch(0), t = c.getContext('2d');
+        t.clearRect(0, 0, W, H); t.drawImage(m, 0, 0); t.globalCompositeOperation = 'source-in';
+        t.fillStyle = BodyEngine.mix('#ffffff', this.tint[0], Math.min(1, this.tint[1] * 2)); t.fillRect(0, 0, W, H); t.globalCompositeOperation = 'source-over';
+        g.save(); g.globalCompositeOperation = 'multiply'; g.drawImage(c, 0, 0); g.restore();
+      }
+      g.fillStyle = '#7f918d'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'center';
+      g.fillText('환자 오른쪽', CX - 250, 590); g.fillText('환자 왼쪽', CX + 250, 590);
+      g.fillStyle = 'rgba(232,215,166,.75)'; g.textAlign = 'right'; g.fillText('AI 생성 이미지', W - 16, H - 12);
+    }
+    // 실사 사진의 (x, y) 둘레 타원을 볼록하게: 가운데를 k 배 확대한 사진을 가장자리로 갈수록 투명하게 겹침(복부 팽만·임신)
+    photoBulge(g, x, y, rx, ry, k) {
+      const ph = this.photo(); if (!ph || k <= 0) return;
+      const c = BodyEngine.scratch(1), t = c.getContext('2d'), s = 1 + k;
+      t.clearRect(0, 0, W, H); t.save(); t.translate(x, y); t.scale(s, s); t.translate(-x, -y); t.drawImage(ph.img, 0, 0, W, H); t.restore();
+      t.globalCompositeOperation = 'destination-in'; t.save(); t.translate(x, y); t.scale(1, ry / rx);
+      const gr = t.createRadialGradient(0, 0, rx * 0.8, 0, 0, rx); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      t.fillStyle = gr; t.fillRect(-rx, -rx, 2 * rx, 2 * rx); t.restore(); t.globalCompositeOperation = 'source-over';
+      g.drawImage(c, 0, 0);
+    }
     stetho(g, q) {
       g.save(); g.strokeStyle = '#2b2f33'; g.lineWidth = 7; g.lineCap = 'round';
       g.beginPath(); g.moveTo(q.x, q.y); g.bezierCurveTo(q.x + 140, q.y - 40, 980, 120, 1060, 70); g.stroke();
@@ -271,6 +304,15 @@
     const skin = { c: '#e4b896', nb: '#efc4a8', t: '#dcac87', y: '#e0b08b', m: '#d9a882', s: '#d2a280', e: '#cf9f7d' }[age] || '#d9a882';
     return { sex, age, skin: sex === 'f' ? BodyEngine.mix(skin, '#f0c8a8', 0.25) : skin, hair: age === 'e' ? '#d8d4cc' : age === 's' ? '#8a8580' : '#2b221d', long: sex === 'f' && age !== 'nb', male: sex === 'm' };
   };
+  // 사진의 피부 부분(붉은 기 > 푸른 기, 너무 어둡지 않음) 마스크 — 한 번 만들어 둠
+  BodyEngine.skinMask = (ph) => {
+    if (ph.mask) return ph.mask;
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const t = c.getContext('2d');
+    t.drawImage(ph.img, 0, 0, W, H); const d = t.getImageData(0, 0, W, H), a = d.data;
+    for (let i = 0; i < a.length; i += 4) { const r = a[i], gg = a[i + 1], b = a[i + 2]; const k = Math.max(0, Math.min(1, (r - b - 15) / 30)) * (r > 70 ? 1 : 0) * (r >= gg ? 1 : 0); a[i + 3] = a[i + 3] * k; }
+    t.putImageData(d, 0, 0); return (ph.mask = c);
+  };
+  BodyEngine.scratch = (i) => { const L = BodyEngine._scr || (BodyEngine._scr = []); if (!L[i]) { L[i] = document.createElement('canvas'); L[i].width = W; L[i].height = H; } return L[i]; };
   BodyEngine.SOUND_TASKS = SOUND_TASKS;
   BodyEngine.W = W; BodyEngine.H = H; BodyEngine.CX = CX; BodyEngine.ABD = ABD; BodyEngine.LUNG = LUNG; BodyEngine.mulberry = mulberry;
   BodyEngine.mix = (a, b, t) => { const h = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); const A = h(a), B = h(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
