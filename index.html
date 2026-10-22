@@ -348,6 +348,7 @@ body:not(.student) .s-only { display: none !important }
         <div class="bubble" id="bBubble" hidden></div>
       </div>
       <div class="ctrl">
+        <div class="grp t-only"><span class="lbl">환자</span><select id="bAvSel" class="sbtn" aria-label="환자 외형"></select></div>
         <div class="grp"><button class="sbtn" id="bStop" type="button">■ 소리 멈춤</button><button class="sbtn" id="bWav" type="button" title="지금 듣는 소리를 WAV 파일로 저장">소리 → 파일</button><button class="sbtn" id="bDo" type="button">진찰하기</button></div>
       </div>
     </section>
@@ -408,6 +409,9 @@ window.Sound = (function () {
   function show(id, avId, title) {
     C = BY[id]; if (!C) return;
     eng.setAvatar(avId || C.av);
+    // 외형 목록은 eye-engine.js(이 스크립트보다 뒤에 읽힘)에 있어서 처음 열 때 채움
+    if (!$('bAvSel').options.length) for (const [k, v] of Object.entries(EyeEngine.AVATARS)) { const o = document.createElement('option'); o.value = k; o.textContent = v.name; $('bAvSel').appendChild(o); }
+    $('bAvSel').value = eng.av;
     $('bCid').textContent = C.id; $('bSym').textContent = '주소: ' + C.sym; $('bDis').textContent = title;
     $('bPre').innerHTML = `전신 소견 <b>${esc(C.prof.length ? C.prof.join(' + ') : '특이 소견 없음')}</b> · 자동 매칭·검수 필요`;
     run(item);
@@ -452,6 +456,8 @@ window.Sound = (function () {
     sayLine(s || ((sc && sc.auto) || first ? C.ex[item][4] : ''));
   });
   $('bItems').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) run(b.dataset.id); });
+  // 환자 외형 바꾸기(교수자): 같은 소견을 다른 환자로. 케이스를 바꾸면 케이스 기본 외형으로 돌아감 (목록은 show 에서 채움)
+  $('bAvSel').addEventListener('change', (e) => { eng.setAvatar(e.target.value); $('avSel').value = e.target.value; run(item); });
   $('bStop').addEventListener('click', () => eng.stop());
   Sound.onChange(v => eng.setMuted(!v));
   $('bDo').addEventListener('click', doExam);
