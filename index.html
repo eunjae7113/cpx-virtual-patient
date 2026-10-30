@@ -450,7 +450,10 @@ window.Sound = (function () {
     if (!$('bAvSel').options.length) for (const [k, v] of Object.entries(EyeEngine.AVATARS)) { const o = document.createElement('option'); o.value = k; o.textContent = v.name; $('bAvSel').appendChild(o); }
     $('bAvSel').value = eng.av;
     $('bCid').textContent = C.id; $('bSym').textContent = '주소: ' + C.sym; $('bDis').textContent = title;
-    $('bPre').innerHTML = `전신 소견 <b>${esc(C.prof.length ? C.prof.join(' + ') : '특이 소견 없음')}</b> · 자동 매칭·검수 필요`;
+    // 어느 질환명 낱말로 매칭됐는지까지(판정 근거). 임상의 원문 케이스는 그 증례 이름
+    const kw = Object.values(C.why || {}).filter(w => w && w !== '수동');
+    $('bPre').innerHTML = `전신 소견 <b>${esc(C.prof.length ? C.prof.join(' + ') : '특이 소견 없음')}</b>` +
+      (kw.length ? ` ← 질환명 '${esc([...new Set(kw.join(', ').split(', '))].join("', '"))}'` : '') + ' · 자동 매칭·검수 필요';
     run(item);
   }
   function params(iid) { const t = IT[iid].task; return Object.assign({}, D.base[t] || {}, C.ex[iid][5] || {}); }
