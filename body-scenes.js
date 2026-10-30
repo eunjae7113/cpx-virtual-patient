@@ -550,6 +550,7 @@
     if (st === 'normal' && !sw) { g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.moveTo(x + d * 6, y + 6); g.lineTo(x + d * tr * 0.75, y + tr * 0.5); g.lineTo(x + d * tr * 0.45, y + tr * 0.72); g.closePath(); g.fill(); }
     if (st === 'effusion') { g.strokeStyle = 'rgba(120,80,30,.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - tr * 0.8, y + tr * 0.1); g.quadraticCurveTo(x, y + tr * 0.18, x + tr * 0.8, y + tr * 0.1); g.stroke(); for (const [bx, by] of [[-0.3, 0.35], [0.1, 0.45], [0.35, 0.3]]) ell(g, x + bx * tr, y + by * tr, 9, 9, null, 'rgba(255,255,255,.6)', 1.5); }
     if (st === 'red_bulge') { ell(g, x - tr * 0.25, y - tr * 0.3, tr * 0.25, tr * 0.15, 'rgba(255,255,255,.35)'); }
+    if (o.canal === 'wax') { const gw = g.createRadialGradient(x - r * 0.2, y - r * 0.2, 4, x, y, r * 0.8); gw.addColorStop(0, '#c8913a'); gw.addColorStop(1, '#6e4416'); ell(g, x, y, r * 0.78, r * 0.72, gw, 'rgba(0,0,0,.3)'); }   // 귀지가 꽉 차 고막이 안 보임
   }
   S.oto = { pts() { return []; }, draw(g) { floor(g, 520); tm(g, 380, 280, 170, -1, this.p.R || {}); tm(g, 820, 280, 170, 1, this.p.L || {}); note(g, '오른쪽 고막', 380, 490); note(g, '왼쪽 고막', 820, 490); }, hint: '이경으로 본 양쪽 고막' };
   function nostril(g, x, y, r, d, o, perf) {
@@ -1525,6 +1526,7 @@
       case 'glove': return handP;
       case 'median_R': return s === 'R' && ['thumb', 'index'].includes(part);
       case 'radial_R': return s === 'R' && part === 'web';
+      case 'radial_L': return s === 'L' && part === 'web';
       case 'hemi_R': return s === 'R' && (arm || leg);
       case 'stocking': return ['dorsum', 'sole'].includes(part);
       case 'L5_L': return s === 'L' && ['calfL', 'dorsum'].includes(part);
