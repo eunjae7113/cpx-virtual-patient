@@ -319,7 +319,7 @@ body:not(.student) .s-only { display: none !important }
       <section class="card">
         <h2 class="ihead">피부 진찰 항목<span class="hcase"></span><span class="hcount t-only"></span></h2>
         <ul class="items" id="sItems"></ul>
-        <details class="note hnote"><summary>그리는 소견 범위</summary>피부 소견: 피부색·땀·긴장도, 염증·발진·자반·수포·부종, 습진·궤양·종양, 소아 발진(엔진이 그림). 생식기 등 일부와 원자료 확인이 필요한 케이스는 준비 중입니다.</details>
+        <details class="note hnote"><summary>그리는 소견 범위</summary>피부 소견: 피부색·땀·긴장도, 염증·발진·자반·수포·부종, 습진·궤양·종양, 소아 발진(엔진이 그림). 생식기 등 일부와 원자료 엑셀(AI 생성) 확인이 필요한 케이스는 준비 중입니다.</details>
         <p class="note t-only" id="sPhotoNote"></p>
       </section>
       <section class="card" id="sPressCard">
@@ -431,8 +431,8 @@ window.Sound = (function () {
       const ps = (e[6] || []).map(p => `'${D.pnames[p] || p}'` + (C.why && C.why[p] ? (C.why[p] === '수동' ? '(케이스에 직접 지정)' : `(질환명 낱말 '${C.why[p]}')`) : '')).join(' + ');
       return ['AI 초안', `질환 프로필 ${ps} 자동 매칭 → 이상. 소견 문장·대사·소리/그림 값은 Claude가 일반 의학 지식으로 쓴 초안(특정 교과서 근거 없음) · tools/body_presets.py · 교수님 검수 전`];
     }
-    if (e[1] === 'check') return ['원자료', `원자료 엑셀에서 우선순위가 붙은 항목이지만 이 질환 프로필에 소견이 없음 → '확인' (구체 소견 없음, 정상 예상 초안). 원자료 엑셀은 AI로 만든 자료`];
-    return ['원자료', '이 질환 프로필에 소견이 없고 원자료 문장도 정상 → 정상. 원자료 엑셀은 AI로 만든 자료'];
+    if (e[1] === 'check') return ['원자료 엑셀(AI 생성)', `원자료 엑셀(AI 생성)에서 우선순위가 붙은 항목이지만 이 질환 프로필에 소견이 없음 → '확인' (구체 소견 없음, 정상 예상 초안).`];
+    return ['원자료 엑셀(AI 생성)', '이 질환 프로필에 소견이 없고 원자료 엑셀(AI 생성) 문장도 정상 → 정상'];
   }
   // 진찰 방법(화면 안내). 손으로 느끼는 항목은 '진찰하기'를 누르면 느낀 것을 글로 보여 줌(학생에게도 — 실제로 손에 느껴지는 것이므로)
   const HOW = { lung: '청진기를 폐야 6곳(좌우 위·가운데·아래)에 대고 좌우를 비교합니다.', heart: '심장 5곳(대동맥판·폐동맥판·Erb·삼첨판·심첨부)을 차례로 듣습니다.',
@@ -470,15 +470,15 @@ window.Sound = (function () {
     $('bItems').innerHTML = D.items.map(x => {
       const ee = C.ex[x.id], gh = x.group !== lastG ? `<li class="ghead">${esc(x.group)}</li>` : ''; lastG = x.group;
       const pill = ee[0] && ee[1] === 'preset' ? '<span class="pill abn t-only">이상</span>' : ee[0] && ee[1] === 'check' ? '<span class="pill todo t-only">확인</span>' : '<span class="pill ok t-only">정상</span>';
-      const w = why(ee), tag = w[0] === '원자료' ? '' : `<span class="stag t-only ${{ '임상의': 'clin', 'Geeky Medics': 'gm' }[w[0]] || 'ai'}" title="${esc(w[1])}">${w[0] === 'Geeky Medics' ? 'GM 원문' : w[0]}</span>`;
+      const w = why(ee), tag = w[0] === '원자료 엑셀(AI 생성)' ? '' : `<span class="stag t-only ${{ '임상의': 'clin', 'Geeky Medics': 'gm' }[w[0]] || 'ai'}" title="${esc(w[1])}">${w[0] === 'Geeky Medics' ? 'GM 원문' : w[0]}</span>`;
       const did = done[C.id + ':' + x.id] ? '<span class="pill done s-only">진찰함</span>' : '';
       return gh + `<li><button type="button" data-id="${x.id}" aria-pressed="${x.id === iid}"><span class="nm">${esc(x.name)}</span>${tag}${pill}${did}</button></li>`;
     }).join('');
     const gm = e[6] && e[6][0] === 'geeky';
     const answer = `<div class="answer"><b>${gm ? '정답 소견 (Geeky Medics 원문)' : e[7] ? '정답 소견 (임상의 원문)' : '정답 소견 (초안 · 검수 필요)'}</b><div class="txt">${esc(e[2])}</div>${e[7] ? `<div class="src">출처: ${esc(e[7])} — 같은 질환의 다른 환자 소견을 옮김</div>` : ''}${e[4] ? `<b>환자 반응</b><div>“${esc(e[4])}”</div>` : ''}` +
-      `<b>원자료 문장 (채점 기준)</b><div>${esc(e[3] || '-')}</div></div>`;
+      `<b>원자료 엑셀 문장 (AI 생성 · 채점 기준)</b><div>${esc(e[3] || '-')}</div></div>`;
     const w = why(e), basis = `<dl class="why"><div><b>판정 근거 · ${w[0]}</b></div><div>${esc(w[1])}</div>` +
-      (e[8] ? `<div>원자료 우선순위 ${e[8]}번 (원자료 엑셀은 AI로 만든 자료 — 임상 근거 아님)</div>` : '') + '</dl>';
+      (e[8] ? `<div>원자료 엑셀(AI 생성) 우선순위 ${e[8]}번 — 임상 근거 아님</div>` : '') + '</dl>';
     const sound = SOUND.includes(it.task);
     const sc = eng.scene(), how = HOW[it.task] || (sc && sc.hint ? sc.hint + '.' : '') + (sc && sc.pts && eng.points().length ? ' 화면의 동그라미를 누르면 그 자리를 진찰하고 환자가 대답합니다.' : '') + " '진찰하기'를 누르면 진찰 결과 전체가 나옵니다.";
     $('bFinding').innerHTML = `<div class="head"><h3>${esc(it.name)}</h3></div><dl class="kv"><dt>방법</dt><dd>${esc(how)}</dd></dl>` +
@@ -555,10 +555,10 @@ window.Sound = (function () {
   // 이상/확인/정상이 어디서 왔는지(교수자 화면). 원자료 엑셀은 AI로 만든 자료, 프리셋은 Claude 초안
   const gWhy = (e) => e[6] === 'geeky' ? `Geeky Medics 신체진찰 원문 · ${C.gm} — 같은 질환 모의 환자의 소견을 옮김(좌우도 원문대로). 걸음 그림은 '${C.pname || P[e[1]].name}' 값에 원문 내용을 반영`
     : e[5] ? `임상의 근거: ${e[5]} → 이상. 걸음 그림 값은 프리셋 '${P[e[1]].name}'(Claude 초안)`
-    : e[0] && e[2] === 'preset' && String(e[1]).startsWith('rx:') ? `질환명 낱말로 반사 프로필 '${G.reflex[e[1].slice(3)].name}' 자동 매칭 → 이상(원자료 우선순위와 무관). 등급·문장은 Claude 초안(교과서 근거 없음, tools/gait_presets.py REFLEX)`
-    : e[0] && e[2] === 'preset' ? `원자료 엑셀(AI로 만든 자료)에서 우선순위가 붙은 항목 + 질환명 낱말로 보행 프리셋 '${P[e[1]].name}' 자동 매칭 → 이상. 걸음 값·소견·대사는 Claude 초안(교과서 근거 없음, tools/gait_presets.py)`
-    : e[0] ? '원자료 엑셀(AI로 만든 자료)에서 우선순위가 붙은 항목이지만 이 질환 보행 프리셋에 소견 없음 → 확인(정상 예상 초안)'
-    : '원자료 엑셀(AI로 만든 자료)에서 우선순위가 없는 항목 → 정상';
+    : e[0] && e[2] === 'preset' && String(e[1]).startsWith('rx:') ? `질환명 낱말로 반사 프로필 '${G.reflex[e[1].slice(3)].name}' 자동 매칭 → 이상(원자료 엑셀(AI 생성) 우선순위와 무관). 등급·문장은 Claude 초안(교과서 근거 없음, tools/gait_presets.py REFLEX)`
+    : e[0] && e[2] === 'preset' ? `원자료 엑셀(AI 생성)에서 우선순위가 붙은 항목 + 질환명 낱말로 보행 프리셋 '${P[e[1]].name}' 자동 매칭 → 이상. 걸음 값·소견·대사는 Claude 초안(교과서 근거 없음, tools/gait_presets.py)`
+    : e[0] ? '원자료 엑셀(AI 생성)에서 우선순위가 붙은 항목이지만 이 질환 보행 프리셋에 소견 없음 → 확인(정상 예상 초안)'
+    : '원자료 엑셀(AI 생성)에서 우선순위가 없는 항목 → 정상';
 
   function show(id, avId, title) {
     C = BY[id]; if (!C) return;
@@ -589,7 +589,7 @@ window.Sound = (function () {
     $('gBubble').hidden = !line; $('gBubble').textContent = line ? '“' + line + '”' : '';
     const finding = e ? e[3] : G.normal[iid];
     const answer = `<div class="answer"><b>정답 소견 (초안 · 검수 필요)</b><div class="txt">${esc(finding)}</div>` +
-      `<b>보행 상태</b><div>${esc(e && e[0] && e[2] === 'preset' ? (String(e[1]).startsWith('rx:') ? G.reflex[e[1].slice(3)].name : (C.pname || pre.name)) : '정상')}</div><b>원자료 문장 (채점 기준)</b><div>${esc((e && e[4]) || '-')}</div></div>`;
+      `<b>보행 상태</b><div>${esc(e && e[0] && e[2] === 'preset' ? (String(e[1]).startsWith('rx:') ? G.reflex[e[1].slice(3)].name : (C.pname || pre.name)) : '정상')}</div><b>원자료 엑셀 문장 (AI 생성 · 채점 기준)</b><div>${esc((e && e[4]) || '-')}</div></div>`;
     $('gFinding').innerHTML = `<div class="head"><h3>${esc(G.items.find(i => i.id === iid).name)}</h3></div><dl class="kv" id="gMeasure"></dl>` +
       (isStudent() ? `<div class="obs"><label for="gObs" class="note" style="margin:0">화면을 보고 관찰한 소견을 적으세요(좌우·크기·리듬). 정상이면 "정상"이라고 적습니다.</label>
         <textarea id="gObs" placeholder="예: 어느 쪽이 · 어떻게 · 얼마나 (보폭, 발 간격, 흔들림, 반사 크기, 좌우 차이)">${esc(gNotes[key] || '')}</textarea>
@@ -798,11 +798,11 @@ window.Sound = (function () {
     const touch = iid === 'item_002' ? '' : `<dl class="kv"><dt>만져 본 느낌</dt><dd>${esc(eng.touch())}</dd>` +
       (iid === 'item_006' ? `<dt>펴지는 시간</dt><dd>놓은 뒤 약 ${eng.recoilTime().toFixed(1)}초</dd>` : '') + '</dl>';
     const answer = `<div class="answer"><b>${e && e[4] === 'geeky' ? '정답 소견 (Geeky Medics 원문)' : '정답 소견 (초안 · 검수 필요)'}</b><div class="txt">${esc(finding)}</div>` +
-      (pre ? `<b>피부 상태</b><div>${esc(pre.name)}</div>` : '') + `<b>원자료 문장 (채점 기준)</b><div>${esc((e && e[3]) || '-')}</div></div>`;
+      (pre ? `<b>피부 상태</b><div>${esc(pre.name)}</div>` : '') + `<b>원자료 엑셀 문장 (AI 생성 · 채점 기준)</b><div>${esc((e && e[3]) || '-')}</div></div>`;
     const sWhy = !e ? '' : e[4] === 'geeky' ? `Geeky Medics 신체진찰 원문 · ${C.gm || ''} — 같은 질환 모의 환자의 소견을 옮김(좌우·위치도 원문대로). 그림·사진은 피부 상태 '${pre ? pre.name : '정상'}'${e[0] ? '' : ' — 정상'}. [ ] 안은 원문과 그림이 다른 점`
-      : !e[0] ? '원자료 엑셀(AI로 만든 자료)에서 우선순위가 없는 항목 → 정상'
-      : e[1] && e[1] !== 'normal' ? `원자료 엑셀(AI로 만든 자료)에서 우선순위가 붙은 항목 + 질환명 낱말로 피부 프리셋 '${pre.name}' 자동 매칭 → 이상. 소견 문장·그림·사진 프롬프트는 Claude 초안(교과서 근거 없음, tools/skin_presets.py)`
-      : '원자료 엑셀(AI로 만든 자료)에서 우선순위가 붙은 항목인데 맞는 피부 프리셋이 없음 → 예상 소견 문장만(Claude 초안, tools/finding_texts.py)';
+      : !e[0] ? '원자료 엑셀(AI 생성)에서 우선순위가 없는 항목 → 정상'
+      : e[1] && e[1] !== 'normal' ? `원자료 엑셀(AI 생성)에서 우선순위가 붙은 항목 + 질환명 낱말로 피부 프리셋 '${pre.name}' 자동 매칭 → 이상. 소견 문장·그림·사진 프롬프트는 Claude 초안(교과서 근거 없음, tools/skin_presets.py)`
+      : '원자료 엑셀(AI 생성)에서 우선순위가 붙은 항목인데 맞는 피부 프리셋이 없음 → 예상 소견 문장만(Claude 초안, tools/finding_texts.py)';
     $('sFinding').innerHTML = `<div class="head"><h3>${esc(S.items.find(i => i.id === iid).name)}</h3></div>${touch}` +
       (!isStudent() || revealed[key] ? answer : '<div class="btnrow" style="margin:0"><button class="btn" id="sReveal" type="button">정답 확인</button></div>') +
       (isStudent() || !sWhy ? '' : `<dl class="why"><div><b>판정 근거</b></div><div>${esc(sWhy)}</div></dl>`);
@@ -5813,8 +5813,8 @@ window.Sound = (function () {
     if (isStudent()) return renderStudentFinding();
     const it = ITEM[curItem], e = cur, [cls, lab] = statusOf(e);
     // 판정 근거: 원자료 엑셀(AI로 만든 자료, 우선순위 = '이상' 아님) / 눈 상태 프리셋(Claude 초안, tools/presets.py) / 예상 문장(Claude 초안, tools/finding_texts.py)
-    const PN = `눈 상태 프리셋 '${B.presets[C.pre].name}'(질환명 낱말로 자동 매칭)`, RAW = '원자료 엑셀(AI로 만든 자료 — 임상 근거 아님)';
-    const srcTxt = { data: `${RAW}의 정상 문장`, preset: `${PN} → 이상. 소견 문장·그림 값은 Claude 초안(교과서 근거 없음, tools/presets.py) · 원자료에는 우선순위 없음`,
+    const PN = `눈 상태 프리셋 '${B.presets[C.pre].name}'(질환명 낱말로 자동 매칭)`, RAW = '원자료 엑셀(AI 생성)';
+    const srcTxt = { data: `${RAW}의 정상 문장`, preset: `${PN} → 이상. 소견 문장·그림 값은 Claude 초안(교과서 근거 없음, tools/presets.py) · 원자료 엑셀(AI 생성)에는 우선순위 없음`,
       both: `${PN} → 이상. 소견 문장·그림 값은 Claude 초안(tools/presets.py) · ${RAW}에도 우선순위가 붙은 항목`,
       check: `${RAW}에서 우선순위가 붙은 항목이지만 이 질환 프리셋에 소견 없음 → 정상 소견 예상(Claude 초안)`,
       text: `${RAW}에서 우선순위가 붙은 항목 → 예상 이상 소견 문장(Claude 초안, tools/finding_texts.py) · 그림은 아직 정상 눈`,
@@ -6116,7 +6116,7 @@ window.Sound = (function () {
     const it = ITEM[curItem], e = cur, v = it.view, P = B.presets[C.pre];
     return {
       case_id: C.id, disease: C.dis, symptom: C.sym, preset: { id: C.pre, name: P.name, review: '교수님 검수 필요' },
-      patient: { avatar: $('avSel').value, avatar_name: EyeEngine.AVATARS[$('avSel').value].name, auto_guess: C.av, note: '원자료에 나이·성별 없음 — 외형은 임시 추정' },
+      patient: { avatar: $('avSel').value, avatar_name: EyeEngine.AVATARS[$('avSel').value].name, auto_guess: C.av, note: '원자료 엑셀(AI 생성)에 나이·성별 없음 — 외형은 임시 추정' },
       variant: { severity: sevKey, flipped, folder: variantDir() + '/' },
       exam: { item_id: it.id, name: it.name, view: v, status: e.abn ? 'abnormal' : 'normal', source: e.source, finding: e.finding, checklist_text: e.checklist, patient_line: e.line },
       media: {
@@ -6295,7 +6295,7 @@ window.Sound = (function () {
     $('pkRes').innerHTML = `<div class="pres"><h3>${isStudent() ? `정답 ${ans.length}개 중 ${hit.length}개 맞힘` : `정답 (우선순위 ${ans.length}개)`}</h3>
       <ol>${ans.map(i => `<li class="${sel.has(i) ? 'hit' : ''}">${isStudent() ? `<span class="mk ${sel.has(i) ? 'hit' : 'miss'}">${sel.has(i) ? '✓ 고름' : '✗ 놓침'}</span>` : ''}${esc(pkName[i])}${go(i)}</li>`).join('')}</ol>
       ${extra.length ? `<b class="note" style="margin:0">정답 목록에 없는 선택</b><ul>${extra.map(i => `<li><span class="mk extra">△</span>${esc(pkName[i])}${go(i)}</li>`).join('')}</ul>` : ''}
-      <p class="note" style="margin:0">정답은 원자료 채점표의 우선순위입니다(초안 · 검수 전). 진찰 버튼을 누르면 그 진찰실로 갑니다.</p></div>`;
+      <p class="note" style="margin:0">정답은 원자료 엑셀(AI 생성)의 우선순위입니다(임상 근거 아님 · 검수 전). 진찰 버튼을 누르면 그 진찰실로 갑니다.</p></div>`;
   }
   function pkGo(p, iid) {
     const id = C.id;
