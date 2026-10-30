@@ -540,12 +540,34 @@
   };
 
   // ================================================================ 인후
+  // 실사 사진(BodyEngine.ENT, tools/genai_ent.py): 파라미터 → 사진 이름. 편도 주위 농양 사진은 환자 왼쪽이라 오른쪽이면 좌우 반전
+  const ENTIMG = {};
+  function entImg(k) {
+    const d = (BE.ENT || {})[k]; if (!d) return null;
+    const im = ENTIMG[k] || (ENTIMG[k] = Object.assign(new Image(), { src: d }));
+    return im.complete && im.naturalWidth ? im : null;
+  }
+  function throatKey(p) {
+    const red = p.red || 0;
+    return p.blood ? 'throat_blood' : p.bulge ? 'throat_pta' : p.exud ? 'throat_exudate' : p.crowded ? 'throat_crowded'
+      : red >= 0.55 ? 'throat_red2' : red >= 0.25 || (p.tons || 1) >= 2 ? 'throat_red1' : 'throat_normal';
+  }
   S.throat = {
     pts() { return []; }, hint: '설압자로 혀를 누르고 "아—" 하게 합니다',
     draw(g) {
       const p = this.p, sk = this.skin(), rnd = BE.mulberry(31);
       floor(g, 540);
       if (p.noexam) { face(this, g, 600, 280, 190, { drool: 1, open: 0.12, gy: 0.2 }); note(g, '앞으로 몸을 숙이고 앉아 있음 · 입을 벌려 보라고만 하고 설압자는 대지 않음', 600, 560); return; }
+      const im = !this.noPhoto && entImg(throatKey(p));
+      if (im) {
+        const h = 482, w = h * im.naturalWidth / im.naturalHeight, x0 = 600 - w / 2, y0 = 52;   // 위쪽 안내 글과 겹치지 않게
+        g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 26); g.clip();
+        if (p.bulge === 'R') { g.translate(1200, 0); g.scale(-1, 1); }
+        g.drawImage(im, x0, y0, w, h); g.restore();
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+        note(g, '입안 뒤쪽(인두) · 아래 = 설압자', 600, 575);
+        return;
+      }
       const open = p.trismus ? 0.35 : 1;
       ell(g, 600, 300, 330, 250 * Math.max(open, 0.55), sk, LINE);
       ell(g, 600, 300, 290, 205 * open, mix(sk, '#b24a4a', 0.5));
