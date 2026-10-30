@@ -455,8 +455,11 @@ window.Sound = (function () {
     $('bCid').textContent = C.id; $('bSym').textContent = '주소: ' + C.sym; $('bDis').textContent = title;
     // 어느 질환명 낱말로 매칭됐는지까지(판정 근거). 임상의 원문 케이스는 그 증례 이름
     const kw = Object.values(C.why || {}).filter(w => w && w !== '수동');
-    $('bPre').innerHTML = `전신 소견 <b>${esc(C.prof.length ? C.prof.join(' + ') : '특이 소견 없음')}</b>` +
-      (kw.length ? ` ← 질환명 '${esc([...new Set(kw.join(', ').split(', '))].join("', '"))}'` : '') + ' · 자동 매칭·검수 필요';
+    // Geeky Medics 원문 케이스: 원문이 먼저(초안 프로필 이름의 좌우가 원문과 다를 수 있어서 '나머지 항목'으로)
+    const gmc = C.prof.includes('Geeky Medics 원문'), pf = C.prof.filter(x => x !== 'Geeky Medics 원문');
+    $('bPre').innerHTML = gmc ? `전신 소견 <b>Geeky Medics 원문</b>` + (pf.length ? ` · 나머지 항목 초안 '${esc(pf.join(' + '))}'` : '')
+      : `전신 소견 <b>${esc(C.prof.length ? C.prof.join(' + ') : '특이 소견 없음')}</b>` +
+        (kw.length ? ` ← 질환명 '${esc([...new Set(kw.join(', ').split(', '))].join("', '"))}'` : '') + ' · 자동 매칭·검수 필요';
     run(item);
   }
   function params(iid) { const t = IT[iid].task; return Object.assign({}, D.base[t] || {}, C.ex[iid][5] || {}); }
