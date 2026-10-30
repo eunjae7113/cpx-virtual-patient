@@ -384,14 +384,40 @@
     },
     exam(q) { return { felt: (this.p[q.k] ? '힘줄이 두껍고, 울퉁불퉁한 단단한 결절이 만져짐. 누르면 아프지 않음.' : '힘줄이 가늘고 고르며 결절이 없음.') }; },
   };
+  // 뒷모습 실사 사진(성인)이 있으면 목 뒤를 확대: 목덜미 높이 = 머리 꼭대기(10)~엉덩뼈 능선(crest) 사이 36%(뒷모습 사진을 보고 잡음)
+  function aknZoom(e) {
+    const ph = e.photo('back'); if (!ph) return null;
+    const cr = (ph.marks || {}).crest || 430, nape = 10 + 0.36 * (cr - 10), Z = 2.1, cy = nape + 12;
+    return { ph, nape, Z, cy, to: (x, y) => ({ x: CX + (x - CX) * Z, y: 300 + (y - cy) * Z }) };
+  }
   S.akn = {
-    pts() { return [{ k: 'neck', x: 600, y: 255, n: '목 뒤 피부 만지기' }, { k: 'ax', x: 960, y: 330, n: '겨드랑이 피부 보기' }]; },
+    pts() {
+      const z = aknZoom(this);
+      return [Object.assign({ k: 'neck', n: '목 뒤 피부 만지기' }, z ? z.to(CX, z.nape - 12) : { x: 600, y: 255 }), { k: 'ax', x: 960, y: 330, n: '겨드랑이 피부 보기' }];
+    },
     draw(g) {
-      const sk = this.skin(), a = this.p.g || 0;
+      const sk = this.skin(), a = this.p.g || 0, z = aknZoom(this);
+      if (z) {
+        const { ph, nape } = z;
+        g.save(); g.translate(CX, 300); g.scale(z.Z, z.Z); g.translate(-CX, -z.cy);
+        g.drawImage(ph.img, 0, 0, W, H);
+        if (a) {   // 목덜미 피부에만 갈색을 곱함(머리카락·배경 제외 — 피부 마스크), 가로로 넓은 띠
+          const m = BodyEngine.skinMask(ph), c = BodyEngine.scratch(0), t = c.getContext('2d'), y = nape - 13;
+          t.clearRect(0, 0, W, H); t.drawImage(m, 0, 0); t.globalCompositeOperation = 'source-in';
+          const gr = t.createRadialGradient(CX, y, 4, CX, y, 56);
+          gr.addColorStop(0, `rgba(95,62,45,${0.8 * a})`); gr.addColorStop(0.6, `rgba(110,75,55,${0.55 * a})`); gr.addColorStop(1, 'rgba(110,75,55,0)');
+          t.save(); t.translate(CX, y); t.scale(1, 0.32); t.translate(-CX, -y); t.fillStyle = gr; t.fillRect(0, 0, W, H); t.restore();
+          t.globalCompositeOperation = 'source-over';
+          g.save(); g.globalCompositeOperation = 'multiply'; g.drawImage(c, 0, 0); g.restore();
+        }
+        g.restore();
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+      } else {
       floor(g, 520); g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2;
       g.beginPath(); g.moveTo(300, 600); g.quadraticCurveTo(320, 330, 520, 300); g.lineTo(680, 300); g.quadraticCurveTo(880, 330, 900, 600); g.closePath(); g.fill(); g.stroke();
       g.fillRect(530, 200, 140, 120); ell(g, 600, 150, 110, 120, this.look().hair, LINE);
       if (a) { const grd = g.createLinearGradient(0, 220, 0, 320); grd.addColorStop(0, 'rgba(60,40,30,0)'); grd.addColorStop(0.4, `rgba(60,40,30,${0.6 * a})`); grd.addColorStop(1, `rgba(60,40,30,${0.3 * a})`); g.fillStyle = grd; g.fillRect(530, 220, 140, 100); g.strokeStyle = `rgba(40,25,20,${0.4 * a})`; g.lineWidth = 1; for (let y = 240; y < 315; y += 7) { g.beginPath(); g.moveTo(535, y); g.quadraticCurveTo(600, y + 3, 665, y); g.stroke(); } }
+      }
       inset(g, 960, 330, 110, '겨드랑이 확대');
       g.save(); g.beginPath(); g.arc(960, 330, 108, 0, 7); g.clip(); g.fillStyle = sk; g.fillRect(850, 220, 220, 220); g.strokeStyle = LINE; g.beginPath(); g.moveTo(880, 260); g.quadraticCurveTo(960, 360, 1040, 260); g.stroke();
       if (a) { ell(g, 960, 320, 70, 45, `rgba(60,40,30,${0.55 * a})`); g.strokeStyle = `rgba(40,25,20,${0.35 * a})`; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(905, 295 + i * 6); g.lineTo(1015, 300 + i * 6); g.stroke(); } }
@@ -504,11 +530,36 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = (k) => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
 
   // ================================================================ 구강
+  // 입안·인후 실사 사진(BodyEngine.ENT, tools/genai_ent.py, 성인 사진): 파라미터 → 사진 이름(mouthKey·throatKey), 없으면 코드 그림
+  const ENTIMG = {};
+  function entImg(e, k) {
+    const d = !e.noPhoto && k && (BE.ENT || {})[k]; if (!d) return null;
+    const im = ENTIMG[k] || (ENTIMG[k] = Object.assign(new Image(), { src: d }));
+    return im.complete && im.naturalWidth ? im : null;
+  }
+  function entDraw(g, im, flip, label) {     // 위쪽 안내 글과 겹치지 않게 아래로, 모서리 둥글게
+    const h = 482, w = h * im.naturalWidth / im.naturalHeight, x0 = 600 - w / 2, y0 = 52;
+    g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 26); g.clip();
+    if (flip) { g.translate(1200, 0); g.scale(-1, 1); }
+    g.drawImage(im, x0, y0, w, h); g.restore();
+    txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+    note(g, label, 600, 575);
+  }
+  // 혀 떨림(움직임)·Koplik·Stensen·침 고임은 사진이 없어 코드 그림. 8세 소아는 성인 입 사진이 어색해서 코드 그림
+  function mouthKey(e, p) {
+    if (/^c_/.test(e.av) || p.tongue_fasc || p.koplik || p.stensen || p.saliva) return null;
+    return p.straw ? 'mouth_strawberry' : p.bigtongue ? 'mouth_bigtongue' : p.gum ? 'mouth_gum' : p.blood ? 'mouth_blood' : p.erosion ? 'mouth_erosion'
+      : p.ulcer ? 'mouth_ulcer' : p.glossitis ? 'mouth_glossitis' : p.pigment ? 'mouth_pigment' : (p.dry || 0) >= 0.4 ? 'mouth_dry'
+      : (p.pale || 0) >= 0.4 ? 'mouth_pale' : 'mouth_normal';
+  }
   S.mouth = {
     pts() { return []; }, hint: '입을 크게 벌리게 하고 혀·점막·잇몸을 살펴보세요',
     draw(g) {
       const p = this.p, sk = this.skin(), rnd = BE.mulberry(21);
-      floor(g, 540); ell(g, 600, 300, 330, 250, sk, LINE);
+      floor(g, 540);
+      const im = entImg(this, mouthKey(this, p));
+      if (im) { entDraw(g, im, false, '입안(앞에서)'); return; }
+      ell(g, 600, 300, 330, 250, sk, LINE);
       const lip = p.lips ? '#c0302a' : mix(sk, '#b24a4a', 0.5);
       ell(g, 600, 300, 290, 200, lip);
       if (p.lips || p.dry) { g.strokeStyle = 'rgba(80,20,20,.6)'; g.lineWidth = 1.5; for (let i = 0; i < 14; i++) { const a = rnd() * 6.28; g.beginPath(); g.moveTo(600 + Math.cos(a) * 285, 300 + Math.sin(a) * 196); g.lineTo(600 + Math.cos(a) * 265, 300 + Math.sin(a) * 178); g.stroke(); } }
@@ -540,13 +591,6 @@
   };
 
   // ================================================================ 인후
-  // 실사 사진(BodyEngine.ENT, tools/genai_ent.py): 파라미터 → 사진 이름. 편도 주위 농양 사진은 환자 왼쪽이라 오른쪽이면 좌우 반전
-  const ENTIMG = {};
-  function entImg(k) {
-    const d = (BE.ENT || {})[k]; if (!d) return null;
-    const im = ENTIMG[k] || (ENTIMG[k] = Object.assign(new Image(), { src: d }));
-    return im.complete && im.naturalWidth ? im : null;
-  }
   function throatKey(p) {
     const red = p.red || 0;
     return p.blood ? 'throat_blood' : p.bulge ? 'throat_pta' : p.exud ? 'throat_exudate' : p.crowded ? 'throat_crowded'
@@ -558,16 +602,8 @@
       const p = this.p, sk = this.skin(), rnd = BE.mulberry(31);
       floor(g, 540);
       if (p.noexam) { face(this, g, 600, 280, 190, { drool: 1, open: 0.12, gy: 0.2 }); note(g, '앞으로 몸을 숙이고 앉아 있음 · 입을 벌려 보라고만 하고 설압자는 대지 않음', 600, 560); return; }
-      const im = !this.noPhoto && entImg(throatKey(p));
-      if (im) {
-        const h = 482, w = h * im.naturalWidth / im.naturalHeight, x0 = 600 - w / 2, y0 = 52;   // 위쪽 안내 글과 겹치지 않게
-        g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 26); g.clip();
-        if (p.bulge === 'R') { g.translate(1200, 0); g.scale(-1, 1); }
-        g.drawImage(im, x0, y0, w, h); g.restore();
-        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
-        note(g, '입안 뒤쪽(인두) · 아래 = 설압자', 600, 575);
-        return;
-      }
+      const im = entImg(this, throatKey(p));
+      if (im) { entDraw(g, im, p.bulge === 'R', '입안 뒤쪽(인두) · 아래 = 설압자'); return; }   // 농양 사진은 환자 왼쪽 → 오른쪽이면 반전
       const open = p.trismus ? 0.35 : 1;
       ell(g, 600, 300, 330, 250 * Math.max(open, 0.55), sk, LINE);
       ell(g, 600, 300, 290, 205 * open, mix(sk, '#b24a4a', 0.5));
@@ -614,9 +650,27 @@
     g.fillStyle = sk; g.strokeStyle = LINE; for (const d of [-1, 1]) { g.beginPath(); g.moveTo(600 + d * 4, 600); g.lineTo(600 + d * 4, 540); g.lineTo(600 + d * 110, 500); g.lineTo(600 + d * 160, 600); g.closePath(); g.fill(); }
     g.fillStyle = '#5f7f9a'; g.beginPath(); g.moveTo(360, 500); g.lineTo(840, 500); g.lineTo(840, 520); g.lineTo(600, 545); g.lineTo(360, 520); g.closePath(); g.fill();
   }
+  // 앞모습 실사 사진(성인)이 있으면 그 위에: 림프절 자리는 사진의 턱·쇄골·젖꼭지 높이(marks)와 머리 길이로 옮김(눈금 사진을 보고 비율을 잡음)
+  function nodeAt(e) {
+    const ph = e.photo(); if (!ph || !ph.marks || !ph.marks.chin) return NODE;
+    const m = ph.marks, hh = m.chin - 10, nk = m.clav - m.chin, at = (dx, y) => [CX + dx * hh, y];
+    const out = {};
+    for (const [k, v] of Object.entries(NODE)) {
+      const d = k.endsWith('_R') ? -1 : 1, xy = {
+        occ: at(-0.40, 10 + 0.66 * hh), cerv: at(d * 0.19, m.chin + 0.4 * nk), post: at(d * 0.42, m.chin + 0.6 * nk),
+        supra: at(d * 0.32, m.clav + 0.1 * hh), ax: at(d * 0.74, m.nip + 0.03 * hh), ing: at(d * 0.42, m.nip + 1.35 * hh) }[k.split('_')[0]];
+      out[k] = [xy[0], xy[1], v[2]];
+    }
+    return out;
+  }
   S.lymph = {
-    pts() { return Object.entries(NODE).map(([k, v]) => ({ k, x: v[0], y: v[1], n: v[2] + ' 림프절 만지기' })); },
-    draw(g) { upper(this, g); for (const n of this.p.nodes || []) { const v = NODE[n.site]; if (v && n.cm >= 1.5) ell(g, v[0], v[1], 7 * n.cm, 6 * n.cm, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.25)'); } },
+    pts() { return Object.entries(nodeAt(this)).map(([k, v]) => ({ k, x: v[0], y: v[1], n: v[2] + ' 림프절 만지기' })); },
+    draw(g) {
+      const ph = this.photo(), N = nodeAt(this);
+      if (ph) this.photoBody(g, ph); else upper(this, g);
+      // 1.5 cm 이상은 눈으로도 볼록. 사진이면 그 자리를 살짝 부풀림
+      for (const n of this.p.nodes || []) { const v = N[n.site]; if (!v || n.cm < 1.5) continue; if (ph) this.photoBulge(g, v[0], v[1], 5 * n.cm, 4.5 * n.cm, 0.18); else ell(g, v[0], v[1], 7 * n.cm, 6 * n.cm, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.25)'); }
+    },
     exam(q) {
       const n = (this.p.nodes || []).find(x => x.site === q.k);
       if (!n) return { felt: '만져지는 림프절이 없음(또는 콩알보다 작고 말랑함).' };
@@ -624,11 +678,41 @@
       return { felt: `약 ${n.cm} cm 크기, ${feel} ${n.fixed ? '주변 조직에 붙어 잘 움직이지 않음' : '손가락 아래에서 잘 움직임'}${n.tender ? ', 누르면 아파함' : ', 누를 때 아프지 않음'}.`, say: n.tender ? '아, 거기 누르니까 아파요.' : '' };
     },
   };
+  // 갑상선: 실사 앞모습에서 목이 작아 2.4배 확대(목 가운데 → 화면 가운데)
+  function thyZoom(e) {
+    const ph = e.photo(), m = ph && ph.marks; if (!m || !m.chin) return null;
+    const hh = m.chin - 10, nk = m.clav - m.chin, Z = 2.4, cy = m.chin + 0.5 * nk;
+    return { ph, m, hh, nk, Z, cy, to: (x, y) => ({ x: CX + (x - CX) * Z, y: 300 + (y - cy) * Z }) };
+  }
   S.thyroid = {
-    pts() { return [{ k: 'R', x: 568, y: 245, n: '갑상선 오른쪽 엽 (침을 삼키게 하며)' }, { k: 'I', x: 600, y: 258, n: '갑상선 협부' }, { k: 'L', x: 632, y: 245, n: '갑상선 왼쪽 엽' }]; },
+    pts() {
+      const z = thyZoom(this);
+      if (z) { const { m, hh, nk } = z;   // 실사 사진: 목(턱~쇄골) 아래쪽, 확대한 화면 좌표로
+        return [['R', -0.13, 0.95, '갑상선 오른쪽 엽 (침을 삼키게 하며)'], ['I', 0, 1.12, '갑상선 협부'], ['L', 0.13, 0.95, '갑상선 왼쪽 엽']]
+          .map(([k, dx, f, n]) => Object.assign({ k, n }, z.to(CX + dx * hh, m.chin + f * nk))); }
+      return [{ k: 'R', x: 568, y: 245, n: '갑상선 오른쪽 엽 (침을 삼키게 하며)' }, { k: 'I', x: 600, y: 258, n: '갑상선 협부' }, { k: 'L', x: 632, y: 245, n: '갑상선 왼쪽 엽' }];
+    },
     hint: '동그라미를 누르면 침을 삼키게 하며 만집니다',
     draw(g) {
       const k = this.since(), up = k < 2 ? Math.sin(Math.PI * k / 2) * 14 : 0, sz = this.p.size || 0;
+      const z = thyZoom(this);
+      if (z) {   // 실사: 목을 확대. 커진 갑상선은 목 아래쪽을 부풀림(삼키면 살짝 올라감)
+        const { ph, m, hh, nk } = z;
+        g.save(); g.translate(CX, 300); g.scale(z.Z, z.Z); g.translate(-CX, -z.cy);
+        this.photoBody(g, ph, true);
+        if (sz >= 0.3) {
+          const y = m.chin + 1.0 * nk - up * 0.15, rx = (0.17 + sz * 0.12) * hh, ry = (0.09 + sz * 0.05) * hh;
+          this.photoBulge(g, CX, y, rx, ry, 0.15 + sz * 0.45);
+          // 부푼 곳 그늘(위는 밝게, 아래 가장자리는 어둡게) — 사진 확대만으로는 평평해 보여서
+          const gr = g.createRadialGradient(CX, y - ry * 0.4, ry * 0.2, CX, y, rx);
+          gr.addColorStop(0, `rgba(255,240,225,${0.10 + sz * 0.1})`); gr.addColorStop(0.75, 'rgba(255,240,225,0)'); gr.addColorStop(0.9, `rgba(80,40,25,${0.05 + sz * 0.06})`); gr.addColorStop(1, 'rgba(80,40,25,0)');
+          g.save(); g.translate(CX, y); g.scale(1, ry / rx); g.translate(-CX, -y); g.fillStyle = gr; g.beginPath(); g.arc(CX, y, rx, 0, 7); g.fill(); g.restore();
+        }
+        g.restore();
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+        if (k < 2) note(g, '꿀꺽 — 침 삼키기', 600, 560);
+        return;
+      }
       upper(this, g);
       g.save(); g.translate(0, -up);
       if (this.look().male && this.look().age !== 'c') ell(g, 600, 212, 12, 9, 'rgba(255,255,255,.12)', 'rgba(0,0,0,.2)');
