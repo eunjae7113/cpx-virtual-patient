@@ -37,7 +37,9 @@ button { cursor: pointer }
 .brand p { margin: 0; color: var(--muted); font-size: 12.5px }
 .picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
 .picker input[type=search] { width: 230px; max-width: 100%; padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface) }
-.picker select { width: 340px; max-width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface) }
+.picker select { width: 290px; max-width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface) }
+.casenav { display: inline-flex; gap: 4px; align-items: center }
+.casenav .dictbtn { padding-left: 10px; padding-right: 10px }
 .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); user-select: none }
 .toggle input { accent-color: var(--accent) }
 
@@ -215,7 +217,7 @@ body:not(.student) .s-only { display: none !important }
       <div class="mode" role="group" aria-label="진찰 부위"><button id="pEye" type="button" aria-pressed="true">눈</button><button id="pSkin" type="button" aria-pressed="false">피부</button><button id="pGait" type="button" aria-pressed="false">보행</button><button id="pBody" type="button" aria-pressed="false">전신</button></div>
       <div class="mode" role="group" aria-label="화면 모드"><button id="mTeacher" type="button" aria-pressed="true">교수자</button><button id="mStudent" type="button" aria-pressed="false">학생</button></div>
       <input id="q" type="search" placeholder="케이스 검색 (번호·질환·증상)" aria-label="케이스 검색">
-      <select id="caseSel" aria-label="케이스 선택"></select>
+      <span class="casenav"><button class="dictbtn" id="cPrev" type="button" title="이전 케이스 (Alt+←)" aria-label="이전 케이스">◀</button><select id="caseSel" aria-label="케이스 선택"></select><button class="dictbtn" id="cNext" type="button" title="다음 케이스 (Alt+→)" aria-label="다음 케이스">▶</button></span>
       <label class="toggle"><input id="onlyAbn" type="checkbox" checked> <span id="onlyAbnTxt">눈 소견이 있는 케이스만</span></label>
       <button class="dictbtn" id="bVoice" type="button" aria-pressed="true" title="모든 진찰실의 소리(환자 음성·청진음·타진음 등) 켜기/끄기">🔊 소리 켜짐</button>
       <button class="dictbtn" id="bPick" type="button" title="이 환자에게 우선 시행할 신체 진찰 10개 고르기 (CPX 연습)">진찰 항목 고르기</button>
@@ -5976,6 +5978,10 @@ window.Sound = (function () {
   $('q').addEventListener('input', fillSelect);
   $('onlyAbn').addEventListener('change', fillSelect);
   $('caseSel').addEventListener('change', (e) => setCase(e.target.value));
+  // 이전/다음 케이스: 지금 목록(검색·'소견 있는 케이스만' 적용) 안에서 옮김. Alt+←/→ 도 같음
+  const stepCase = (d) => { const o = [...$('caseSel').options].map(x => x.value), i = o.indexOf(C.id); if (o.length) setCase(o[(i + d + o.length) % o.length]); };
+  $('cPrev').addEventListener('click', () => stepCase(-1)); $('cNext').addEventListener('click', () => stepCase(1));
+  document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); stepCase(e.key === 'ArrowLeft' ? -1 : 1); } });
   $('showDis').addEventListener('change', fillSelect);
 
   // ------------------------------------------------------------ 탭: 생성 자료 / 실제 사진 / 생성형 AI / JSON
