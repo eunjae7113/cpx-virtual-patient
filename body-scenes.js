@@ -368,9 +368,32 @@
   };
 
   // ================================================================ 피부: 황색종(아킬레스건)·흑색극세포증
+  // 실사 사진(tools/genai_ent.py)을 상자 안에 비율대로 넣음. 돌려주는 함수 = 사진 속 비율 위치(fx, fy) → 화면 좌표(반전 반영)
+  // g 가 없으면 그리지 않고 위치 변환만(누르는 지점 계산용)
+  function fitPhoto(g, im, cx, cy, maxW, maxH, flip) {
+    const s = Math.min(maxW / im.naturalWidth, maxH / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s, x0 = cx - w / 2, y0 = cy - h / 2;
+    if (g) { g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 20); g.clip(); if (flip) { g.translate(2 * cx, 0); g.scale(-1, 1); } g.drawImage(im, x0, y0, w, h); g.restore(); }
+    return (fx, fy) => ({ x: x0 + (flip ? 1 - fx : fx) * w, y: y0 + fy * h });
+  }
+  // 귀·다리 사진은 40대 남성으로 만들어서 성인 남성 외형에만(여성·소아는 코드 그림)
+  const photoOf = (e, k) => (BE.entImg && e.look().male && !/^c_/.test(e.av) ? BE.entImg(e, k) : null);
+  const aiMark = (g) => txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+  // 아킬레스건 사진: 뒤에서 본 두 다리(환자 오른쪽 = 사진 오른쪽). 힘줄 위치는 사진을 보고 적음(비율)
+  const XAN_MARK = { xan_normal: { R: [0.70, 0.55], L: [0.31, 0.55] }, xan_xanthoma: { R: [0.64, 0.55], L: [0.33, 0.55] } };
+  function xanPhoto(e) {
+    const p = e.p, k = p.R && p.L ? 'xan_xanthoma' : !p.R && !p.L ? 'xan_normal' : null;   // 한쪽만이면 사진이 없어 코드 그림
+    const im = k && photoOf(e, k); if (!im) return null;
+    return { im, k, at: (g) => fitPhoto(g, im, CX, 305, 760, 470, false) };
+  }
   S.xan = {
-    pts() { return [{ k: 'R', x: 780, y: 360, n: '오른쪽 아킬레스건 만지기' }, { k: 'L', x: 420, y: 360, n: '왼쪽 아킬레스건 만지기' }]; },
+    pts() {
+      const P = xanPhoto(this);
+      if (P) { const f = P.at(null), M = XAN_MARK[P.k]; return [Object.assign({ k: 'R', n: '오른쪽 아킬레스건 만지기' }, f(...M.R)), Object.assign({ k: 'L', n: '왼쪽 아킬레스건 만지기' }, f(...M.L))]; }
+      return [{ k: 'R', x: 780, y: 360, n: '오른쪽 아킬레스건 만지기' }, { k: 'L', x: 420, y: 360, n: '왼쪽 아킬레스건 만지기' }];
+    },
     draw(g) {
+      const P = xanPhoto(this);
+      if (P) { floor(g, 560); P.at(g); note(g, '환자 왼쪽', 330, 560); note(g, '환자 오른쪽', 870, 560); note(g, '뒤에서 본 모습(서서)', 600, 588); aiMark(g); return; }
       floor(g, 500); const sk = this.skin();
       for (const [k, x] of [['L', 420], ['R', 780]]) {
         g.fillStyle = sk; g.strokeStyle = LINE; g.lineWidth = 2;
@@ -483,9 +506,32 @@
     if (o.disch) { g.fillStyle = 'rgba(220,200,90,.85)'; g.beginPath(); g.moveTo(-20, 30); g.quadraticCurveTo(-10, 80, -18, 120); g.quadraticCurveTo(-28, 80, -22, 30); g.fill(); }
     g.restore();
   }
+  // 바깥귀 사진: 얼굴이 사진 왼쪽 = 해부학적으로 왼쪽 귀로 나옴 → 왼쪽 칸은 그대로, 오른쪽 칸은 반전
+  // t = 이주, m = 꼭지돌기(귀 뒤): 격자를 겹친 사진을 보고 적은 비율 위치(반전 전 기준)
+  const EAR_MARK = { ear_normal: { t: [0.42, 0.52], m: [0.70, 0.66] }, ear_battle: { t: [0.40, 0.45], m: [0.60, 0.62] },
+    ear_externa: { t: [0.38, 0.50], m: [0.74, 0.64] }, ear_parotid: { t: [0.47, 0.40], m: [0.66, 0.56] } };
+  const earKey = (o) => o.bruise ? 'ear_battle' : o.parotid ? 'ear_parotid' : o.tragus || o.disch || o.red || o.swell ? 'ear_externa' : 'ear_normal';
+  function earPhoto(e) {
+    const kR = earKey(e.p.R || {}), kL = earKey(e.p.L || {}), R = photoOf(e, kR), L = photoOf(e, kL);
+    if (!R || !L) return null;
+    return { R: { k: kR, at: (g) => fitPhoto(g, R, 300, 290, 540, 440, true) }, L: { k: kL, at: (g) => fitPhoto(g, L, 900, 290, 540, 440, false) } };
+  }
   S.ear = {
-    pts() { return [{ k: 'R', x: 330, y: 300, n: '오른쪽 이주(귀 앞 돌기) 누르기' }, { k: 'L', x: 870, y: 300, n: '왼쪽 이주 누르기' }, { k: 'Rm', x: 470, y: 340, n: '오른쪽 귀 뒤(꼭지돌기) 누르기' }, { k: 'Lm', x: 730, y: 340, n: '왼쪽 귀 뒤 누르기' }]; },
-    draw(g) { floor(g, 520); auricle(this, g, 400, 280, 1, -1, this.p.R || {}); auricle(this, g, 800, 280, 1, 1, this.p.L || {}); note(g, '오른쪽 귀', 400, 500); note(g, '왼쪽 귀', 800, 500); },
+    pts() {
+      const P = earPhoto(this);
+      if (P) {
+        const out = [];
+        for (const sd of ['R', 'L']) { const f = P[sd].at(null), M = EAR_MARK[P[sd].k], nm = sd === 'R' ? '오른쪽' : '왼쪽';
+          out.push(Object.assign({ k: sd, n: nm + ' 이주(귀 앞 돌기) 누르기' }, f(...M.t)), Object.assign({ k: sd + 'm', n: nm + ' 귀 뒤(꼭지돌기) 누르기' }, f(...M.m))); }
+        return out;
+      }
+      return [{ k: 'R', x: 330, y: 300, n: '오른쪽 이주(귀 앞 돌기) 누르기' }, { k: 'L', x: 870, y: 300, n: '왼쪽 이주 누르기' }, { k: 'Rm', x: 470, y: 340, n: '오른쪽 귀 뒤(꼭지돌기) 누르기' }, { k: 'Lm', x: 730, y: 340, n: '왼쪽 귀 뒤 누르기' }];
+    },
+    draw(g) {
+      const P = earPhoto(this);
+      if (P) { floor(g, 540); P.R.at(g); P.L.at(g); note(g, '오른쪽 귀', 300, 530); note(g, '왼쪽 귀', 900, 530); aiMark(g); return; }
+      floor(g, 520); auricle(this, g, 400, 280, 1, -1, this.p.R || {}); auricle(this, g, 800, 280, 1, 1, this.p.L || {}); note(g, '오른쪽 귀', 400, 500); note(g, '왼쪽 귀', 800, 500);
+    },
     exam(q) {
       const s = this.p[q.k[0]] || {}, back = q.k.length > 1;
       if (!back && s.tragus) return { say: '아악! 귀 앞을 누르니까 너무 아파요.', felt: '이주를 누르자 심하게 아파함.' };
@@ -537,6 +583,7 @@
     const im = ENTIMG[k] || (ENTIMG[k] = Object.assign(new Image(), { src: d }));
     return im.complete && im.naturalWidth ? im : null;
   }
+  BE.entImg = entImg;   // 첫 묶음(귀·아킬레스건)에서도 씀
   function entDraw(g, im, flip, label) {     // 위쪽 안내 글과 겹치지 않게 아래로, 모서리 둥글게
     const h = 482, w = h * im.naturalWidth / im.naturalHeight, x0 = 600 - w / 2, y0 = 52;
     g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 26); g.clip();
