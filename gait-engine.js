@@ -480,7 +480,8 @@
     const cap = (x1, y1, x2, y2, w, col) => { g.lineCap = 'round'; g.strokeStyle = 'rgba(40,28,22,0.35)'; g.lineWidth = w + 2; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
     const toe = (bx, by, ang, len, w, col) => { const a = ang * D2R, ex = bx + Math.cos(a) * len, ey = by + Math.sin(a) * len; cap(bx, by, ex, ey, w, col); return [ex, ey]; };
     let tip;
-    if (this.view === 'side') {
+    if (this.drawFootPhoto(g, s, u, sv, resp, big)) { /* 실사 사진(tools/genai_babinski.py) */ }
+    else if (this.view === 'side') {
       // 옆모습(발 안쪽): 다리는 왼쪽(머리 쪽)으로 누워 있고 발은 세워져 발바닥이 오른쪽(검사자 쪽). 엄지가 위
       g.fillStyle = 'rgba(60,50,40,0.12)'; g.beginPath(); g.ellipse(560, 500, 380, 26, 0, 0, 7); g.fill();
       g.fillStyle = sk(0.98); g.strokeStyle = 'rgba(40,28,22,0.4)'; g.lineWidth = 1.2;
@@ -531,6 +532,52 @@
     g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(this.hud, 26, 30);
     g.font = '12px "IBM Plex Sans KR", sans-serif'; g.textBaseline = 'alphabetic'; g.fillStyle = 'rgba(40,50,55,0.75)'; g.textAlign = 'right';
     g.fillText(this.view === 'side' ? '누운 환자의 발 · 안쪽 옆에서 (발바닥이 오른쪽)' : '누운 환자의 발바닥 · 발치에서', W - 14, 22);
+  };
+
+  // 바빈스키 실사(ChatGPT, tools/genai_babinski.py, 오른발 1200×800 → 화면 900×600 가운데). 없거나 '실사 배경'을 끄면 false → 코드 그림
+  // 옆 = 가만히 있는 발 사진에서 엄지만 뿌리 관절을 축으로 돌림(AI가 엄지만 꺾은 사진을 못 만듦), 발바닥 = 세 사진(가만히·굽힘·부채꼴)을 반응만큼 겹침
+  // 좌표는 사진 1200×800 기준(눈금 사진 _snaps/_bab_grid_side.png 를 보고 적음)
+  const BAB = {
+    toe: [[903, 176], [900, 120], [904, 80], [918, 52], [940, 38], [970, 38], [995, 72], [1003, 130], [1003, 176]], pivot: [955, 188],
+    side: [[945, 688], [985, 560], [990, 400], [985, 250]],                       // 뒤꿈치 → 발바닥 바깥쪽 → 앞꿈치
+    sole: [[600, 700], [440, 560], [430, 420], [440, 300], [470, 230], [560, 215], [650, 215]],   // 뒤꿈치 → 바깥쪽 가장자리 → 앞꿈치를 가로질러 엄지 밑
+  };
+  P.drawFootPhoto = function (g, s, u, sv, resp, big) {
+    if (this.useBg === false || !this.bgImg) return false;
+    const side = this.view === 'side', I = (k) => { const im = this.bgImg['bab_' + (side ? 'side' : 'sole') + '_' + k]; return im && im.complete && im.naturalWidth ? im : null; };
+    const base = I('neutral'); if (!base) return false;
+    const mir = !side && s === 'L', X0 = 150, K = 0.75, C = (q) => [mir ? 1200 - (X0 + q[0] * K) : X0 + q[0] * K, q[1] * K];
+    const img = (im, a) => { g.save(); g.globalAlpha = a; if (mir) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(im, X0, 0, 900, 600); g.restore(); };
+    g.save(); g.filter = 'blur(24px)'; if (mir) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(base, -60, -100, 1320, 880); g.restore();   // 양옆 빈 곳: 같은 사진을 흐리게 늘려서
+    img(base, 1);
+    if (side) {
+      // 엄지: 원래 자리를 벽 색으로 지우고, 뿌리 관절을 축으로 돌린 엄지를 다시 그림(+ = 정강이 쪽으로 젖힘, − = 발바닥 쪽으로 굽힘)
+      if (Math.abs(big) > 0.3) {
+        const poly = (pts, dy) => { g.beginPath(); pts.forEach((q, i) => { const c = C([q[0], q[1] + (i === 0 || i === pts.length - 1 ? dy : 0)]); i ? g.lineTo(c[0], c[1]) : g.moveTo(c[0], c[1]); }); g.closePath(); };
+        // 지울 색 = 엄지 오른쪽 벽의 실제 색(사진에서 읽음), 위·아래 두 점으로 세로 그라데이션
+        const px = (q) => { const c = C(q), dpr = this.c.width / W, d = g.getImageData(c[0] * dpr | 0, c[1] * dpr | 0, 1, 1).data; return `rgb(${d[0]},${d[1]},${d[2]})`; };
+        const c0 = C([1060, 40]), c1 = C([1060, 180]), wall = g.createLinearGradient(0, c0[1], 0, c1[1]); wall.addColorStop(0, px([1060, 40])); wall.addColorStop(1, px([1060, 180]));
+        g.save(); poly(BAB.toe.map((q) => [q[0] + (q[0] > 950 ? 5 : 1), q[1] - 3]), 0); g.fillStyle = wall; g.fill(); g.restore();
+        const pv = C(BAB.pivot);
+        g.save(); g.translate(pv[0], pv[1]); g.rotate(-big * Math.PI / 180); g.translate(-pv[0], -pv[1]);
+        poly(BAB.toe, 14); g.clip(); img(base, 1); g.restore();
+      }
+    } else {
+      const key = resp > 0.01 ? (this.p.plantar[s] > 0 ? 'ext' : this.p.plantar[s] < 0 ? 'flex' : null) : null, im = key && I(key);
+      if (im) img(im, resp);
+    }
+    // 긁는 길(빨간 선)과 도구(반사망치 손잡이 끝)
+    const PS = (side ? BAB.side : BAB.sole).map(C), q = sv * (PS.length - 1), i0 = Math.min(PS.length - 2, Math.floor(q)), f = q - i0;
+    const hx = lerp(PS[i0][0], PS[i0 + 1][0], f), hy = lerp(PS[i0][1], PS[i0 + 1][1], f);
+    const cap = (x1, y1, x2, y2, w, col) => { g.lineCap = 'round'; g.strokeStyle = 'rgba(40,28,22,0.35)'; g.lineWidth = w + 2; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+    if (sv > 0) { g.strokeStyle = 'rgba(210,50,50,0.55)'; g.lineWidth = 3; g.beginPath(); g.moveTo(PS[0][0], PS[0][1]); for (let k = 1; k <= i0; k++) g.lineTo(PS[k][0], PS[k][1]); g.lineTo(hx, hy); g.stroke(); }
+    if (u > 0.4 && u < 2.6) {
+      const m = side ? 1 : mir ? 1 : -1, dx = side ? 150 : m * 120, dy = side ? 70 : 160;
+      cap(hx + dx, hy + dy, hx, hy, 7, '#9aa3a8'); cap(hx + dx, hy + dy, hx + dx * 1.35, hy + dy * 1.35, 26, '#e2b996');
+    }
+    g.font = '11px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,0.9)'; g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 3;
+    g.strokeText('AI 생성 이미지', 12, H - 10); g.fillText('AI 생성 이미지', 12, H - 10);
+    return true;
   };
 
   P.seatH = function () { return (0.285 + (HANG[this.task] ? 0.07 : 0)) * AV[this.av].h; };   // 진찰대 높이(엉덩관절)
