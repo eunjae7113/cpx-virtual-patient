@@ -585,13 +585,14 @@
     return im.complete && im.naturalWidth ? im : null;
   }
   BE.entImg = entImg;   // 첫 묶음(귀·아킬레스건)에서도 씀
-  function entDraw(g, im, flip, label) {     // 위쪽 안내 글과 겹치지 않게 아래로, 모서리 둥글게
+  function entDraw(g, im, flip, label) {     // 위쪽 안내 글과 겹치지 않게 아래로, 모서리 둥글게. 사진 자리 [x0, y0, w, h] 를 돌려줌
     const h = 482, w = h * im.naturalWidth / im.naturalHeight, x0 = 600 - w / 2, y0 = 52;
     g.save(); g.beginPath(); g.roundRect(x0, y0, w, h, 26); g.clip();
     if (flip) { g.translate(1200, 0); g.scale(-1, 1); }
     g.drawImage(im, x0, y0, w, h); g.restore();
     txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
     note(g, label, 600, 575);
+    return [x0, y0, w, h];
   }
   // 혀 떨림(움직임)·Koplik·Stensen·침 고임은 사진이 없어 코드 그림. 8세 소아는 성인 입 사진이 어색해서 코드 그림
   function mouthKey(e, p) {
@@ -644,14 +645,44 @@
     return p.blood ? 'throat_blood' : p.bulge ? 'throat_pta' : p.exud ? 'throat_exudate' : p.crowded ? 'throat_crowded'
       : red >= 0.55 ? 'throat_red2' : red >= 0.25 || (p.tons || 1) >= 2 ? 'throat_red1' : 'throat_normal';
   }
+  // 설압자로 혀 누르기: 누르기 전엔 혀가 올라와 목 안쪽(편도·인두 뒷벽)을 가림 → 설압자가 들어와 혀를 눌러 내리면 보임.
+  // clip = 입안 자리(사진 사각형 또는 코드 그림 타원). 혀·설압자는 코드 그림(사진 위에 겹침)
+  function tongueCover(e, g, clip) {
+    // 처음 누른 때부터(진찰하기를 다시 눌러도 처음부터 다시 하지 않음). 다 누르면 혀는 아래에 눌린 채로 남음
+    const k = e.tdep && e.tdep.p === e.p ? e.t - e.tdep.t0 : -1, press = k < 0 ? 0 : ease(k / 1.1);
+    g.save(); clip(); g.clip();
+    const top = 215 + press * 255, cx = 600;
+    const gr = g.createLinearGradient(0, top, 0, top + 260); gr.addColorStop(0, '#d98886'); gr.addColorStop(1, '#b4605e');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(cx - 420, 620); g.lineTo(cx - 420, top + 170);
+    g.bezierCurveTo(cx - 300, top - 10, cx - 120, top - 30, cx, top - 30); g.bezierCurveTo(cx + 120, top - 30, cx + 300, top - 10, cx + 420, top + 170);
+    g.lineTo(cx + 420, 620); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(110,40,40,.35)'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx, top - 10); g.quadraticCurveTo(cx - 4, top + 120, cx, top + 260); g.stroke();
+    const rnd = BE.mulberry(77); g.fillStyle = 'rgba(255,235,235,.25)';
+    for (let i = 0; i < 120; i++) { const a = rnd() * 6.28, r = Math.sqrt(rnd()); g.beginPath(); g.arc(cx + Math.cos(a) * r * 300, top + 120 + Math.sin(a) * r * 110, 1.8, 0, 7); g.fill(); }
+    g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.ellipse(cx - 90, top + 30, 70, 14, -0.15, 0, 7); g.fill();
+    // 설압자(나무): 아래에서 들어와 혀 가운데를 누름
+    if (k >= 0) {
+      const tip = top + 60, len = Math.min(1, k / 0.35);
+      g.save(); g.translate(cx, 640 - (640 - tip) * len);
+      g.fillStyle = '#e4d1a4'; g.strokeStyle = 'rgba(90,70,40,.55)'; g.lineWidth = 2;
+      g.beginPath(); g.roundRect(-46, 0, 92, 640, 46); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(150,120,70,.35)'; g.lineWidth = 1.5; for (const d of [-22, 4, 26]) { g.beginPath(); g.moveTo(d, 30); g.lineTo(d + 3, 600); g.stroke(); }
+      g.restore();
+    }
+    g.restore();
+    if (k < 0) { g.save(); g.fillStyle = 'rgba(8,14,16,.72)'; g.beginPath(); g.roundRect(380, 440, 440, 40, 10); g.fill(); txt(g, '혀가 올라와 목 안쪽이 가려져 있습니다 — 설압자로 눌러 보세요', 600, 466, { size: 15, c: '#e8d7a6', al: 'center' }); g.restore(); }
+  }
+  function tdep(e) { if (!e.tdep || e.tdep.p !== e.p) e.tdep = { p: e.p, t0: e.t }; return { say: '아—' }; }
   S.throat = {
-    pts() { return []; }, hint: '설압자로 혀를 누르고 "아—" 하게 합니다',
+    pts() { return this.p.noexam ? [] : [{ k: 'tdep', x: 600, y: 512, n: '설압자로 혀를 누르고 “아—” 해 보세요' }]; },
+    hint: '아래 동그라미(설압자)를 누르면 혀를 누르고 "아—" 하게 합니다',
+    exam() { return tdep(this); }, auto() { return tdep(this); },
     draw(g) {
       const p = this.p, sk = this.skin(), rnd = BE.mulberry(31);
       floor(g, 540);
       if (p.noexam) { face(this, g, 600, 280, 190, { drool: 1, open: 0.12, gy: 0.2 }); note(g, '앞으로 몸을 숙이고 앉아 있음 · 입을 벌려 보라고만 하고 설압자는 대지 않음', 600, 560); return; }
       const im = entImg(this, throatKey(p));
-      if (im) { entDraw(g, im, p.bulge === 'R', '입안 뒤쪽(인두) · 아래 = 설압자'); return; }   // 농양 사진은 환자 왼쪽 → 오른쪽이면 반전
+      if (im) { const b = entDraw(g, im, p.bulge === 'R', '입안 뒤쪽(인두) · 아래 = 설압자'); tongueCover(this, g, () => { g.beginPath(); g.roundRect(b[0], b[1], b[2], b[3], 26); }); return; }   // 농양 사진은 환자 왼쪽 → 오른쪽이면 반전
       const open = p.trismus ? 0.35 : 1;
       ell(g, 600, 300, 330, 250 * Math.max(open, 0.55), sk, LINE);
       ell(g, 600, 300, 290, 205 * open, mix(sk, '#b24a4a', 0.5));
@@ -680,6 +711,7 @@
       rrect(g, 470, 430, 260, 40, 10, '#d8cba8');
       g.restore();
       if (p.drool) { g.fillStyle = 'rgba(220,235,245,.6)'; g.beginPath(); g.ellipse(700, 520, 22, 40, 0, 0, 7); g.fill(); }
+      tongueCover(this, g, () => { g.beginPath(); g.ellipse(600, 300, 262, 178 * open, 0, 0, 7); });
       note(g, '입안 뒤쪽(인두) · 아래 = 설압자', 600, 575);
     },
   };
