@@ -102,12 +102,6 @@ button { cursor: pointer }
 .items li.ghead { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em; padding: 8px 9px 2px; border-top: 1px solid var(--line); margin-top: 4px }
 .items li.ghead:first-child { border-top: 0; margin-top: 0; padding-top: 0 }
 .items .nm { font-size: 13.5px }
-/* 전신 진찰실 안의 탭(전체·눈·피부·보행) */
-.rtabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 10px 12px 0; border-bottom: 1px solid var(--stage-line); background: #0b1420 }
-.rtabs .rtl { font-size: 13px; font-weight: 700; color: #cfdcec; margin-right: 10px; padding-bottom: 8px }
-.rtabs button { border: 0; background: transparent; color: #9fb4cf; font-size: 14px; font-weight: 600; padding: 8px 16px 9px; border-radius: 10px 10px 0 0; border-bottom: 3px solid transparent }
-.rtabs button:hover { color: #eef4fa; background: rgba(255,255,255,.04) }
-.rtabs button[aria-pressed=true] { color: #fff; background: var(--stage); border-bottom-color: #4ea3e6 }
 /* 통합 진찰 항목(엑셀 순서): 큰 묶음(일반 신체진찰·신경검사) = 탭, 분류(의식확인·피부시진 …) = 작은 제목 */
 .items li.gsub { font-size: 11px; font-weight: 600; color: var(--accent-deep); padding: 6px 9px 0 }
 .items .rtag { font-size: 10.5px; color: var(--muted); white-space: nowrap }
@@ -256,14 +250,6 @@ body:not(.student) .s-only { display: none !important }
 
   <div class="main" id="eyeMain">
     <section class="stagebox" aria-label="진찰 화면">
-      <!-- 전신 진찰실 안의 탭: 전체(엑셀 78항목) / 눈 / 피부 / 보행·반사 진찰실. 보이는 화면 맨 위로 옮겨 다님(showMain) -->
-      <div class="rtabs" id="rTabs" role="tablist" aria-label="전신 진찰실 안의 진찰실">
-        <span class="rtl">전신 진찰실</span>
-        <button id="pBody" type="button" role="tab" aria-pressed="true" title="신체진찰 78항목을 엑셀(신체진찰항목2) 순서대로 한 목록에서 — 항목에 맞는 화면이 자동으로 바뀜">전체 78항목</button>
-        <button id="pEye" type="button" role="tab" aria-pressed="false" title="눈 진찰실: 눈 진찰 항목 11개">눈</button>
-        <button id="pSkin" type="button" role="tab" aria-pressed="false" title="피부 진찰실: 피부 진찰 항목">피부</button>
-        <button id="pGait" type="button" role="tab" aria-pressed="false" title="보행 진찰실: 걷기·서기, 협조운동, 반사">보행·반사</button>
-      </div>
       <div class="casebar">
         <span class="cid" id="cid"></span><span class="dis" id="dis"></span><span class="sym" id="sym"></span>
         <span class="pre t-only" id="pre"></span>
@@ -5873,9 +5859,7 @@ window.Sound = (function () {
     document.body.classList.toggle('uni', p === 'body');
     if (p !== 'body') room = p; else if (!(UROOM[uItem] || []).includes(room)) room = UROOM[uItem][0];
     showMain();
-    for (const [k, id] of [['body', 'pBody'], ['eye', 'pEye'], ['skin', 'pSkin'], ['gait', 'pGait']]) $(id).setAttribute('aria-pressed', p === k ? 'true' : 'false');
     $('onlyAbnTxt').textContent = p === 'skin' ? '피부 소견이 있는 케이스만' : p === 'gait' ? '보행 소견이 있는 케이스만' : p === 'body' ? '소견이 있는 케이스만' : '눈 소견이 있는 케이스만';
-    try { localStorage.setItem('examRoom', p); } catch (e) { }
     fillSelect();
     // 한 진찰실 안의 탭이라 같은 환자를 유지: 지금 케이스가 이 탭의 '소견 있는 케이스만' 목록에 없으면 그 거르기를 끔
     if (C && !view.some(c => c.id === C.id) && $('onlyAbn').checked) { $('onlyAbn').checked = false; fillSelect(); }
@@ -5886,7 +5870,6 @@ window.Sound = (function () {
     for (const r of ['eye', 'skin', 'gait', 'body']) $(r + 'Main').hidden = r !== room;
     if (room !== 'eye') cancelAll();                  // 눈 진찰 진행·음성 멈춤
     SkinRoom.setOn(room === 'skin'); GaitRoom.setOn(room === 'gait'); BodyRoom.setOn(room === 'body');
-    const box = $(room + 'Main').querySelector('.stagebox'); if ($('rTabs').parentElement !== box) box.prepend($('rTabs'));
     if (part === 'body') { const aside = $(room + 'Main').querySelector('.panel'); if ($('uCard').parentElement !== aside) aside.prepend($('uCard')); }
   }
 
@@ -5937,10 +5920,6 @@ window.Sound = (function () {
   }
   $('uItems').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) uGo(b.dataset.id, null); });
   $('uAlt').addEventListener('click', (e) => { const b = e.target.closest('button[data-r]'); if (b) uGo(uItem, b.dataset.r); });
-  $('pEye').addEventListener('click', () => setPart('eye'));
-  $('pSkin').addEventListener('click', () => setPart('skin'));
-  $('pGait').addEventListener('click', () => setPart('gait'));
-  $('pBody').addEventListener('click', () => setPart('body'));
   window.EyeCaseAv = (id) => { const c = cases.find(x => x.id === id); return c && c.av; };   // 보행: 외형이 정해진 프리셋인지 판단
   $('mTeacher').addEventListener('click', () => setUiMode('teacher'));
   $('mStudent').addEventListener('click', () => setUiMode('student'));
@@ -6391,9 +6370,8 @@ window.Sound = (function () {
   if (start === 'student' || start === 'teacher') startMode = start;
   C = cases.find(c => c.id === start) || cases.find(c => c.id === '060');
   setUiMode(startMode);
-  // 처음엔 전신 진찰실(통합). 부위별 화면을 쓰던 사람은 그 화면으로
-  let startPart = 'body'; try { startPart = localStorage.getItem('examRoom') || 'body'; } catch (e) { }
-  setPart(['eye', 'skin', 'gait', 'body'].includes(startPart) ? startPart : 'body');
+  // 진찰실은 전신 진찰실 하나(78항목 목록 → 항목에 맞는 눈·피부·보행·전신 화면). 부위별 화면(setPart('eye') 등)은 스냅샷 도구용
+  setPart('body');
   requestAnimationFrame(loop);
 })();
 </script>
