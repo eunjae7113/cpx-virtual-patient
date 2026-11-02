@@ -108,6 +108,7 @@
     fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift',
     dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus', babinski: '바빈스키' };
   GaitEngine.CLOSE = CLOSE;
+  const G3_CLOSE = { fnt: 1, hts: 1, ram: 1 };   // 앉아서 하는 검사 중 3D 환자로 그리는 것(소뇌기능). 반사·pronator drift 는 아직 2D
   const P = GaitEngine.prototype;
 
   P.setAvatar = function (a) { this.av = AV[a] ? a : 'm_m'; this.reset(); };
@@ -352,7 +353,7 @@
       const brady = Math.max(p.R.brady, p.L.brady), per = 1.8 * (1 + 0.7 * brady);
       const s = Math.floor(t / (per * 3)) % 2 ? 'L' : 'R', q = p[s], k = Math.floor(t / per), u = (t % per) / per;
       this.hud = nm(s) + '손 검지로 제 손가락 → 코';
-      const fp = [0.36 * Hh, seat + 0.31 * Hh + (hr(k) - 0.5) * 0.08 * Hh, sgOf(s) * 0.03 * Hh + (hr(k + 7) - 0.5) * 0.12 * Hh];
+      const fp = [0.32 * Hh, seat + 0.31 * Hh + (hr(k) - 0.5) * 0.08 * Hh, sgOf(s) * 0.03 * Hh + (hr(k + 7) - 0.5) * 0.12 * Hh];
       let w, appr, atF = 0, atN = 0;           // w: 코 쪽 비중(1 = 코), appr: 목표에 가까운 정도
       if (u < 0.4) { const e = ease(u / 0.4); w = 1 - e; appr = e * e; atF = clamp((u - 0.28) / 0.12, 0, 1); }
       else if (u < 0.55) { w = 0; appr = 1; atF = 1 - (u - 0.4) / 0.15; }
@@ -538,6 +539,13 @@
   P.depth = function (q) { const f = this.camPhi(); return -q[0] * Math.sin(f) + q[2] * Math.cos(f); };   // 클수록 멂
   // 가까이 앞에서 볼 때는 원근 카메라(어깨 높이, 환자 앞 약 4 m): 앞으로 뻗은 팔이 아래로 처져 보이지 않게
   P.frontCam = function () { const Hh = AV[this.av].h; return { X: 2.4 * Hh, Y: 0.6 * Hh, F: 620 }; };
+  // 3D 환자용: 2D project() 와 같은 투영 값. 옆 = 비스듬한 평행 투영(깊이만큼 위로 밀림), 앞 = 원근
+  P.closeCam = function () {
+    const Hh = AV[this.av].h;
+    if (this.view !== 'side') { const c = this.frontCam(); return { kind: 'persp', X: c.X, Y: c.Y, f: c.F / Hh * c.X, cy: 230 }; }
+    const hg = HANG[this.task], f = this.camPhi();
+    return { kind: 'obl', S: (hg ? 620 : 700) / Hh, c: Math.cos(f), s: Math.sin(f), k: 0.12 * Hh * Math.cos(f), Y0: hg ? 530 : 578 };
+  };
   P.camDir = function (q) {                      // 점 q 에서 보는 사람 쪽 방향
     if (CLOSE[this.task]) {
       if (this.view !== 'side') { const c = this.frontCam(); return norm([c.X - q[0], c.Y - q[1], -q[2]]); }
@@ -572,12 +580,14 @@
     this.drawRoom(g);
     this.drawPrints(g);
     // 3D 환자(실사 모델): 걷기·서기 검사에서 켜져 있으면 2D 마네킹 대신. 그림자는 2D 로
-    const g3 = this.use3D !== false && this.g3 && this.g3.ready && !CLOSE[this.task] && this.pose;
+    const close = CLOSE[this.task];
+    const g3 = this.use3D !== false && this.g3 && this.g3.ready && (!close || G3_CLOSE[this.task]) && this.pose;
     if (g3) {
       const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, sh = this.project(pv.x, 0, pv.z), Hh = this.pose.H;
-      g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill();
-      const cv = this.g3.render(J, this.view, Hh, AV[this.av].hair);
+      if (!close) { g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill(); }
+      const cv = this.g3.render(J, this.view, Hh, AV[this.av].hair, close ? this.closeCam() : null);
       if (cv) g.drawImage(cv, 0, 0, W, H);
+      if (close) this.drawBody(g, this.pose, false, true);     // 검사자 손가락·손은 3D 환자 위에 2D 로
     } else this.drawBody(g, this.pose);
     if (this.hud) {
       g.font = '600 15px "IBM Plex Sans KR", sans-serif'; const w = g.measureText(this.hud).width + 24;
@@ -679,7 +689,7 @@
 
   // 몸 그리기: 관절 위치를 세계 좌표로 바꿔 투영하고, 먼 쪽부터
   // jointsOnly: 그리지 않고 관절 위치만 돌려줌(3D 환자 gait-3d.js 가 씀). x 는 골반 기준(+pv.x 해야 세계 좌표)
-  P.drawBody = function (g, o, jointsOnly) {
+  P.drawBody = function (g, o, jointsOnly, overlay) {     // overlay = 3D 환자 위에 검사자 손·망치만
     if (!o) return;
     const A = AV[this.av], Hh = o.H, L = o.L, pv = o.pelvis, side = this.view === 'side';
     const skin = A.skin, sk = (k) => `rgb(${skin[0] * k | 0},${skin[1] * k | 0},${skin[2] * k | 0})`;
@@ -726,7 +736,7 @@
     const arms = { R: arm('R'), L: arm('L') };
     if (jointsOnly) {
       let floor = Infinity; for (const s of ['R', 'L']) floor = Math.min(floor, legs[s].heel[1], legs[s].toe[1]);
-      return { legs, arms, shC, neckTop, headC, pv, L, floor };
+      return { legs, arms, shC, neckTop, headC, pv, L, floor, arm: { R: o.legs.R.arm, L: o.legs.L.arm }, nose };
     }
     const PJ = (p3) => W3(p3[0], p3[1], p3[2]);
     const cap = (a, b, w, col, outline) => {   // 둥근 막대(팔다리)
@@ -827,7 +837,7 @@
     };
     // 그림자
     if (CLOSE[this.task]) {
-      if (o.exam && o.exam.fp) {  // 검사자 손(흰 가운 소매)
+      if (o.exam && o.exam.fp && (overlay || !G3_CLOSE[this.task] || this.use3D === false || !(this.g3 && this.g3.ready))) {  // 검사자 손(흰 가운 소매)
         const f = o.exam.fp, fr = !side;          // 앞에서 볼 때는 검사자 팔이 화면 오른쪽 옆에서 들어옴
         const el = add(f, fr ? [0.05 * Hh, -0.1 * Hh, 0.22 * Hh] : [0.2 * Hh, -0.1 * Hh, 0.04 * Hh]), sl = add(el, fr ? [0.03 * Hh, -0.05 * Hh, 0.12 * Hh] : [0.12 * Hh, -0.05 * Hh, 0.02 * Hh]);
         cap(sl, el, 0.07 * Hh, '#f3f5f6'); cap(el, add(f, [0.03 * Hh, -0.01 * Hh, 0]), 0.045 * Hh, '#e2b996');
@@ -852,6 +862,7 @@
         cap(add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), under, 0.05 * Hh, '#e2b996');
         cap(add(under, [0.3 * Hh, -0.1 * Hh, 0.03 * Hh]), add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), 0.07 * Hh, '#f3f5f6');
       };
+      if (overlay) { drawExamHand(); drawHammer(); return; }
       const byDepth = (a, b) => this.depth(legs[b].ankle) - this.depth(legs[a].ankle);
       const lo = ['R', 'L'].sort(byDepth);
       const behind = o.hammer && o.hammer.at === 'an';      // 발목반사는 아킬레스건(뒤)을 치므로 망치를 다리보다 먼저
