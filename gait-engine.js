@@ -108,7 +108,7 @@
     fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift',
     dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus', babinski: '바빈스키' };
   GaitEngine.CLOSE = CLOSE;
-  const G3_CLOSE = { fnt: 1, hts: 1, ram: 1 };   // 앉아서 하는 검사 중 3D 환자로 그리는 것(소뇌기능). 반사·pronator drift 는 아직 2D
+  const G3_CLOSE = { fnt: 1, hts: 1, ram: 1, drift: 1, dtr_arm: 1, dtr_leg: 1, clonus: 1 };   // 앉아서 하는 검사도 3D 환자로(바빈스키는 발 확대 그림이라 2D)
   const P = GaitEngine.prototype;
 
   P.setAvatar = function (a) { this.av = AV[a] ? a : 'm_m'; this.reset(); };
@@ -585,9 +585,10 @@
     if (g3) {
       const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, sh = this.project(pv.x, 0, pv.z), Hh = this.pose.H;
       if (!close) { g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill(); }
+      if (close) this.drawBody(g, this.pose, false, 'pre');    // 발목반사 망치는 다리 뒤(아킬레스건) → 3D 환자보다 먼저
       const cv = this.g3.render(J, this.view, Hh, AV[this.av].hair, close ? this.closeCam() : null);
       if (cv) g.drawImage(cv, 0, 0, W, H);
-      if (close) this.drawBody(g, this.pose, false, true);     // 검사자 손가락·손은 3D 환자 위에 2D 로
+      if (close) this.drawBody(g, this.pose, false, 'post');   // 검사자 손가락·손·망치는 3D 환자 위에 2D 로
     } else this.drawBody(g, this.pose);
     if (this.hud) {
       g.font = '600 15px "IBM Plex Sans KR", sans-serif'; const w = g.measureText(this.hud).width + 24;
@@ -837,7 +838,7 @@
     };
     // 그림자
     if (CLOSE[this.task]) {
-      if (o.exam && o.exam.fp && (overlay || !G3_CLOSE[this.task] || this.use3D === false || !(this.g3 && this.g3.ready))) {  // 검사자 손(흰 가운 소매)
+      if (o.exam && o.exam.fp && overlay !== 'pre') {  // 검사자 손(흰 가운 소매)
         const f = o.exam.fp, fr = !side;          // 앞에서 볼 때는 검사자 팔이 화면 오른쪽 옆에서 들어옴
         const el = add(f, fr ? [0.05 * Hh, -0.1 * Hh, 0.22 * Hh] : [0.2 * Hh, -0.1 * Hh, 0.04 * Hh]), sl = add(el, fr ? [0.03 * Hh, -0.05 * Hh, 0.12 * Hh] : [0.12 * Hh, -0.05 * Hh, 0.02 * Hh]);
         cap(sl, el, 0.07 * Hh, '#f3f5f6'); cap(el, add(f, [0.03 * Hh, -0.01 * Hh, 0]), 0.045 * Hh, '#e2b996');
@@ -862,7 +863,9 @@
         cap(add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), under, 0.05 * Hh, '#e2b996');
         cap(add(under, [0.3 * Hh, -0.1 * Hh, 0.03 * Hh]), add(under, [0.16 * Hh, -0.06 * Hh, 0.02 * Hh]), 0.07 * Hh, '#f3f5f6');
       };
-      if (overlay) { drawExamHand(); drawHammer(); return; }
+      const behind0 = o.hammer && o.hammer.at === 'an';
+      if (overlay === 'pre') { if (behind0) drawHammer(); return; }
+      if (overlay) { drawExamHand(); if (!behind0) drawHammer(); return; }
       const byDepth = (a, b) => this.depth(legs[b].ankle) - this.depth(legs[a].ankle);
       const lo = ['R', 'L'].sort(byDepth);
       const behind = o.hammer && o.hammer.at === 'an';      // 발목반사는 아킬레스건(뒤)을 치므로 망치를 다리보다 먼저
