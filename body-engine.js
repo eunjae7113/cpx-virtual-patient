@@ -212,7 +212,7 @@
       g.fillStyle = '#cfe0dc'; g.font = '600 20px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
       g.fillText(this.sel ? this.sel.n : sc && sc.hint ? sc.hint : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
       if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText(BodyEngine.muted ? '소리 꺼짐 — 위쪽 🔇 단추로 켜기' : '소리가 반복 재생됩니다 · ■ 멈춤', 28, 68); g.fillText(this.clip ? '실제 녹음(마네킹) · HLS-CMDS, CC BY 4.0' : '합성음(교육용 근사)', 28, 88); }
-      if (this.felt) this.feltBox(g, this.felt);
+      if (this.felt) this.feltBox(g, this.felt); else this.feltH = 0;
     }
     // 손끝·눈으로 확인한 것(진단 이름 없이 느낀 것만)을 화면 아래에
     feltBox(g, s) {
@@ -221,6 +221,7 @@
       for (const ch of s) { if (g.measureText(cur + ch).width > maxW) { lines.push(cur); cur = ch; } else cur += ch; }
       lines.push(cur);
       const h = 18 + lines.length * 24, y = H - h - 12;
+      this.feltH = h + 12;   // 화면이 환자 말풍선을 이 띠 위로 올릴 때 씀(캔버스 600 기준 px)
       g.fillStyle = 'rgba(8,14,16,.82)'; g.beginPath(); g.roundRect ? g.roundRect(20, y, W - 40, h, 10) : g.rect(20, y, W - 40, h); g.fill();
       g.fillStyle = '#e8d7a6'; lines.forEach((l, i) => g.fillText(l, 40, y + 28 + i * 24));
     }
