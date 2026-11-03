@@ -513,7 +513,11 @@
   const earKey = (o) => o.bruise ? 'ear_battle' : o.parotid ? 'ear_parotid' : o.tragus || o.disch || o.red || o.swell ? 'ear_externa' : 'ear_normal';
   function earPhoto(e) {
     const kR = earKey(e.p.R || {}), kL = earKey(e.p.L || {}), R = photoOf(e, kR), L = photoOf(e, kL);
-    if (!R || !L) return null;
+    if (!R || !L) {   // 성인 여성: 공개 사진(오른쪽 귀, 정상)만 있음 → 양쪽 정상일 때만, 왼쪽 칸은 반전
+      const F = !/^c_/.test(e.av) && !e.look().male && kR === 'ear_normal' && kL === 'ear_normal' && clinImg(e, 'ear_female');
+      if (!F) return null;
+      return { credit: F.d.credit, R: { k: 'ear_female', m: F.d.mark, at: (g) => fitPhoto(g, F.im, 300, 290, 540, 440, false) }, L: { k: 'ear_female', m: F.d.mark, at: (g) => fitPhoto(g, F.im, 900, 290, 540, 440, true) } };
+    }
     return { R: { k: kR, at: (g) => fitPhoto(g, R, 300, 290, 540, 440, true) }, L: { k: kL, at: (g) => fitPhoto(g, L, 900, 290, 540, 440, false) } };
   }
   S.ear = {
@@ -521,7 +525,7 @@
       const P = earPhoto(this);
       if (P) {
         const out = [];
-        for (const sd of ['R', 'L']) { const f = P[sd].at(null), M = EAR_MARK[P[sd].k], nm = sd === 'R' ? '오른쪽' : '왼쪽';
+        for (const sd of ['R', 'L']) { const f = P[sd].at(null), M = P[sd].m || EAR_MARK[P[sd].k], nm = sd === 'R' ? '오른쪽' : '왼쪽';
           out.push(Object.assign({ k: sd, n: nm + ' 이주(귀 앞 돌기) 누르기' }, f(...M.t)), Object.assign({ k: sd + 'm', n: nm + ' 귀 뒤(꼭지돌기) 누르기' }, f(...M.m))); }
         return out;
       }
@@ -529,7 +533,7 @@
     },
     draw(g) {
       const P = earPhoto(this);
-      if (P) { floor(g, 540); P.R.at(g); P.L.at(g); note(g, '오른쪽 귀', 300, 530); note(g, '왼쪽 귀', 900, 530); aiMark(g); return; }
+      if (P) { floor(g, 540); P.R.at(g); P.L.at(g); note(g, '오른쪽 귀', 300, 530); note(g, '왼쪽 귀', 900, 530); if (P.credit) txt(g, '공개 사진: ' + P.credit + ' (왼쪽은 좌우 반전)', W - 16, H - 12, { size: 12, c: 'rgba(232,215,166,.75)', al: 'right' }); else aiMark(g); return; }
       floor(g, 520); auricle(this, g, 400, 280, 1, -1, this.p.R || {}); auricle(this, g, 800, 280, 1, 1, this.p.L || {}); note(g, '오른쪽 귀', 400, 500); note(g, '왼쪽 귀', 800, 500);
     },
     exam(q) {
@@ -642,15 +646,57 @@
     return [x0, y0, w, h];
   }
   // 혀 떨림(움직임)·Koplik·Stensen·침 고임은 사진이 없어 코드 그림. 8세 소아는 성인 입 사진이 어색해서 코드 그림
+  // Koplik·Stensen 은 '볼 안쪽 점막 보기' 확대(공개 임상 사진)로 보여 주므로 입안 전체는 정상 사진을 씀
   function mouthKey(e, p) {
-    if (/^c_/.test(e.av) || p.tongue_fasc || p.koplik || p.stensen || p.saliva) return null;
+    if (/^c_/.test(e.av) || p.tongue_fasc || p.saliva) return null;
     return p.straw ? 'mouth_strawberry' : p.bigtongue ? 'mouth_bigtongue' : p.gum ? 'mouth_gum' : p.blood ? 'mouth_blood' : p.erosion ? 'mouth_erosion'
       : p.ulcer ? 'mouth_ulcer' : p.glossitis ? 'mouth_glossitis' : p.pigment ? 'mouth_pigment' : (p.dry || 0) >= 0.4 ? 'mouth_dry'
       : (p.pale || 0) >= 0.4 ? 'mouth_pale' : 'mouth_normal';
   }
+  // 볼 안쪽 점막 확대: 모든 케이스에서 같은 지점·같은 틀로 뜸(정상도 사진) → 사진이 뜨는 것 자체로는 정답이 새지 않음
+  // 사진 = BodyEngine.CLIN(tools/clinical_photos.py): 정상 cheek_normal, Koplik cheek_koplik, Stensen관 입구 발적은 정상 사진의 입구(mark)를 붉게 칠함
+  const CLINIMG2 = {};
+  function clinImg2(e, k) {
+    const d = !e.noPhoto && (BE.CLIN || {})[k]; if (!d) return null;
+    const im = CLINIMG2[k] || (CLINIMG2[k] = Object.assign(new Image(), { src: d.src }));
+    return im.complete && im.naturalWidth ? { im, d } : null;
+  }
+  function cheekZoom(e, g) {
+    const p = e.p, P = clinImg2(e, p.koplik ? 'cheek_koplik' : 'cheek_normal'); if (!P) return;
+    const k = ease((e.t - e.cheek.t0) / 0.35), bw = 640 * (0.85 + 0.15 * k), bh = 430 * (0.85 + 0.15 * k), x0 = 600 - bw / 2, y0 = 290 - bh / 2;
+    g.save(); g.globalAlpha = k; g.fillStyle = 'rgba(6,10,12,.6)'; g.fillRect(0, 0, W, H);
+    g.beginPath(); g.roundRect(x0, y0, bw, bh, 22); g.clip();
+    const im = P.im, s = Math.max(bw / im.naturalWidth, bh / im.naturalHeight), dw = im.naturalWidth * s, dh = im.naturalHeight * s, dx = 600 - dw / 2, dy = 290 - dh / 2;
+    g.drawImage(im, dx, dy, dw, dh);
+    if (p.stensen && P.d.mark) {   // 이하선관 입구가 붉게 부음(볼거리)
+      const mx = dx + P.d.mark[0] * dw, my = dy + P.d.mark[1] * dh, r = 0.09 * dw;
+      g.globalCompositeOperation = 'multiply';
+      const gr = g.createRadialGradient(mx, my, 2, mx, my, r); gr.addColorStop(0, 'rgba(200,40,40,.95)'); gr.addColorStop(0.5, 'rgba(215,70,70,.7)'); gr.addColorStop(1, 'rgba(230,120,120,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(mx, my, r, 0, 7); g.fill(); g.globalCompositeOperation = 'source-over';
+    }
+    g.restore();
+    g.save(); g.globalAlpha = k;
+    g.strokeStyle = 'rgba(232,215,166,.6)'; g.lineWidth = 2; g.beginPath(); g.roundRect(x0, y0, bw, bh, 22); g.stroke();
+    note(g, '볼 안쪽 점막(어금니 맞은편) — 동그라미를 다시 누르면 닫힘', 600, y0 + bh + 26);
+    const cr = '공개 임상 사진: ' + P.d.credit + ' (자름' + (p.stensen ? '·입구 발적은 덧칠' : '') + ')';
+    g.fillStyle = 'rgba(6,10,12,.65)'; g.beginPath(); g.roundRect(x0 + bw - 12 - cr.length * 6.4, y0 + bh - 30, cr.length * 6.4 + 4, 22, 6); g.fill();
+    txt(g, cr, x0 + bw - 14, y0 + bh - 14, { size: 12, c: 'rgba(232,215,166,.85)', al: 'right' });
+    g.restore();
+  }
   S.mouth = {
-    pts() { return []; }, hint: '입을 크게 벌리게 하고 혀·점막·잇몸을 살펴보세요',
+    pts() { return [{ k: 'cheek', x: 330, y: 330, n: '볼 안쪽 점막 보기(볼을 젖혀서)' }]; }, hint: '입을 크게 벌리게 하고 혀·점막·잇몸을 살펴보세요. 왼쪽 동그라미 = 볼 안쪽 점막 확대',
+    exam(q) {
+      const on = !(this.cheek && this.cheek.p === this.p && this.cheek.on);
+      this.cheek = { p: this.p, on, t0: this.t };
+      if (!on) return {};
+      const p = this.p;
+      return { felt: p.koplik ? '어금니 맞은편 볼 점막에 붉은 바탕 위로 모래알 같은 작은 흰 점들이 보임.' : p.stensen ? '어금니 맞은편 이하선관 입구가 붉게 부어 있음.' : '볼 점막 분홍빛, 이하선관 입구 정상.', say: '' };
+    },
     draw(g) {
+      S.mouth.mouthBase.call(this, g);
+      if (this.cheek && this.cheek.p === this.p && this.cheek.on) cheekZoom(this, g);
+    },
+    mouthBase(g) {
       const p = this.p, sk = this.skin(), rnd = BE.mulberry(21);
       floor(g, 540);
       const im = entImg(this, mouthKey(this, p));
