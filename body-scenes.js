@@ -765,7 +765,22 @@
     g.restore();
     if (k < 0) { g.save(); g.fillStyle = 'rgba(8,14,16,.72)'; g.beginPath(); g.roundRect(380, 440, 440, 40, 10); g.fill(); txt(g, '혀가 올라와 목 안쪽이 가려져 있습니다 — 설압자로 눌러 보세요', 600, 466, { size: 15, c: '#e8d7a6', al: 'center' }); g.restore(); }
   }
-  function tdep(e) { if (!e.tdep || e.tdep.p !== e.p) e.tdep = { p: e.p, t0: e.t }; return { say: '아—' }; }
+  // 설압자로 본 목 안 — 그림 파라미터를 그대로 말로(질환 이름 없이, 그림에 그린 것만)
+  function throatFelt(p) {
+    const red = p.red || 0, tons = clamp(p.tons || 1, 1, 4), side = (s) => s === 'R' ? '오른쪽' : '왼쪽', f = [];
+    if (p.trismus) f.push('입이 잘 벌어지지 않음.');
+    if (p.bulge) f.push(`${side(p.bulge)} 편도 위 입천장(연구개)이 부어 불룩함.`);
+    if (p.uvula || p.bulge) f.push(`목젖이 ${side(p.uvula || (p.bulge === 'R' ? 'L' : 'R'))}으로 밀려 있음.`);
+    f.push(red >= 0.55 ? '편도와 목 뒷벽이 진하게 붉음.' : red >= 0.25 ? '편도와 목 뒷벽이 약간 붉음.' : '목 안 점막은 분홍빛.');
+    f.push(tons >= 4 ? '양쪽 편도가 매우 커서 가운데서 거의 맞닿음.' : tons === 3 ? '양쪽 편도가 커서 목구멍을 절반 넘게 가림.' : tons === 2 ? '편도가 앞기둥 밖으로 조금 나와 있음.' : '편도는 앞기둥 안쪽에 있어 작음.');
+    if (p.exud) f.push('편도 위에 흰 삼출물이 덮여 있음.');
+    if (p.palate_pet) f.push('입천장에 작은 붉은 점들이 있음.');
+    if (p.blood) f.push('목 뒷벽으로 피가 흘러내림.');
+    if (p.crowded) f.push('목젖과 연구개가 낮아 목 안이 좁아 보임.');
+    if (p.drool) f.push('침을 삼키지 못해 흘림.');
+    return f.join(' ');
+  }
+  function tdep(e) { if (!e.tdep || e.tdep.p !== e.p) e.tdep = { p: e.p, t0: e.t }; return { say: '아—', felt: throatFelt(e.p) }; }
   S.throat = {
     pts() { return this.p.noexam ? [] : [{ k: 'tdep', x: 600, y: 512, n: '설압자로 혀를 누르고 “아—” 해 보세요' }]; },
     hint: '아래 동그라미(설압자)를 누르면 혀를 누르고 "아—" 하게 합니다',
