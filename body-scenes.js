@@ -552,7 +552,54 @@
     if (st === 'red_bulge') { ell(g, x - tr * 0.25, y - tr * 0.3, tr * 0.25, tr * 0.15, 'rgba(255,255,255,.35)'); }
     if (o.canal === 'wax') { const gw = g.createRadialGradient(x - r * 0.2, y - r * 0.2, 4, x, y, r * 0.8); gw.addColorStop(0, '#c8913a'); gw.addColorStop(1, '#6e4416'); ell(g, x, y, r * 0.78, r * 0.72, gw, 'rgba(0,0,0,.3)'); }   // 귀지가 꽉 차 고막이 안 보임
   }
-  S.oto = { pts() { return []; }, draw(g) { floor(g, 520); tm(g, 380, 280, 170, -1, this.p.R || {}); tm(g, 820, 280, 170, 1, this.p.L || {}); note(g, '오른쪽 고막', 380, 490); note(g, '왼쪽 고막', 820, 490); }, hint: '이경으로 본 양쪽 고막' };
+  // 고막 공개 임상 사진(BodyEngine.CLIN, tools/clinical_photos.py, 위키미디어 공용 CC BY-SA): 파라미터 → 사진 키
+  // 사진의 해부학적 쪽(side)이 칸과 다르면 좌우 반전(오른쪽 고막: 추골병이 1시 방향, 왼쪽: 11시). 외이도염(부음)은 사진이 없어 정상 사진 위에 덧그림
+  const CLINIMG = {};
+  function clinImg(e, k) {
+    const d = !e.noPhoto && k && (BE.CLIN || {})[k]; if (!d) return null;
+    const im = CLINIMG[k] || (CLINIMG[k] = Object.assign(new Image(), { src: d.src }));
+    return im.complete && im.naturalWidth ? { im, d } : null;
+  }
+  const tmKey = (o, sd) => o.canal === 'wax' ? 'oto_wax' : o.tm === 'red_bulge' ? 'oto_aom' : o.tm === 'effusion' ? 'oto_effusion' : 'oto_normal_' + sd;
+  function tmPhoto(g, x, y, r, sd, o, P) {
+    ell(g, x, y, r + 12, r + 12, '#0b0f10');
+    g.save(); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.clip();
+    g.save(); g.translate(x, y); if (P.d.side ? P.d.side !== sd : sd === 'L') g.scale(-1, 1);   // 쪽이 없는 사진은 왼쪽 칸만 반전(양쪽이 똑같아 보이지 않게)
+    g.drawImage(P.im, -r, -r, 2 * r, 2 * r); g.restore();
+    if (o.canal === 'swollen') {   // 외이도염: 붉게 부은 벽이 안쪽으로 좁아져 고막은 작은 구멍으로만, 그 위를 하얀 찌꺼기가 덮음
+      const hr = r * 0.38;
+      g.save(); ell(g, x, y, r, r, '#1a0806'); g.beginPath(); g.arc(x, y, hr * 1.05, 0, Math.PI * 2); g.clip();   // 좁아진 구멍 안쪽 = 멀리 보이는 작은 고막
+      g.translate(x, y); if (P.d.side ? P.d.side !== sd : sd === 'L') g.scale(-1, 1);
+      g.drawImage(P.im, -hr * 1.25, -hr * 1.25, 2.5 * hr, 2.5 * hr); g.restore();
+      g.save(); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.arc(x, y, hr, 0, Math.PI * 2, true); g.clip();
+      g.drawImage(P.im, x - r * 1.9, y - r * 1.9, 3.8 * r, 3.8 * r);          // 사진의 외이도 피부를 크게 → 부은 벽의 결
+      g.globalCompositeOperation = 'multiply'; ell(g, x, y, r, r, 'rgba(225,95,80,.8)'); g.globalCompositeOperation = 'source-over';
+      const sh = g.createRadialGradient(x, y, hr, x, y, r);
+      sh.addColorStop(0, 'rgba(60,10,8,.75)'); sh.addColorStop(0.12, 'rgba(255,200,190,.12)'); sh.addColorStop(0.6, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(40,5,5,.45)');
+      ell(g, x, y, r, r, sh); g.restore();
+      const rim = g.createRadialGradient(x, y, hr * 0.6, x, y, hr * 1.35);   // 구멍 가장자리를 부은 벽 그늘로 흐리게
+      rim.addColorStop(0, 'rgba(90,20,15,0)'); rim.addColorStop(0.55, 'rgba(90,20,15,.55)'); rim.addColorStop(0.8, 'rgba(150,50,40,.35)'); rim.addColorStop(1, 'rgba(150,50,40,0)');
+      ell(g, x, y, hr * 1.35, hr * 1.35, rim);
+      g.save(); g.filter = 'blur(4px)';   // 하얀 찌꺼기·분비물(불규칙하게, 흐리게)
+      for (const [bx, by, rx, ry, a] of [[-0.12, 0.22, 0.32, 0.12, 0.75], [0.18, 0.1, 0.2, 0.09, 0.6], [-0.3, -0.05, 0.12, 0.2, 0.55], [0.05, -0.28, 0.18, 0.07, 0.45]]) {
+        g.fillStyle = `rgba(240,234,214,${a})`; g.beginPath(); g.ellipse(x + bx * r, y + by * r, rx * r, ry * r, bx * 2, 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
+    }
+    g.restore();
+  }
+  S.oto = { pts() { return []; }, hint: '이경으로 본 양쪽 고막',
+    draw(g) {
+      const R = this.p.R || {}, L = this.p.L || {}, PR = clinImg(this, tmKey(R, 'R')), PL = clinImg(this, tmKey(L, 'L'));
+      if (PR && PL) {
+        floor(g, 520); tmPhoto(g, 330, 270, 205, 'R', R, PR); tmPhoto(g, 870, 270, 205, 'L', L, PL);
+        note(g, '오른쪽 고막', 330, 505); note(g, '왼쪽 고막', 870, 505);
+        const cr = [...new Set([PR.d.credit, PL.d.credit])].join('  /  ');
+        txt(g, '공개 임상 사진: ' + cr + (PR.d.side === 'L' || PL.d.side !== 'L' ? ' (좌우 반전·자름)' : ' (자름)'), W - 16, H - 12, { size: 12, c: 'rgba(232,215,166,.75)', al: 'right' });
+        return;
+      }
+      floor(g, 520); tm(g, 380, 280, 170, -1, R); tm(g, 820, 280, 170, 1, L); note(g, '오른쪽 고막', 380, 490); note(g, '왼쪽 고막', 820, 490);
+    } };
   function nostril(g, x, y, r, d, o, perf) {
     ell(g, x, y, r + 14, r + 14, '#0b0f10'); ell(g, x, y, r, r, '#3a1a18');
     const muc = { red: '#d0504a', bleed: '#c9605a', crust: '#d08a80', polyp: '#d08a80' }[o.muc] || '#d89a92';
