@@ -1347,6 +1347,46 @@
     },
   };
 
+  // ---- 실사 몸(감각·근력·관절 장면 왼쪽의 몸 그림 대신): 앞모습 사진(머리~엉덩이) + 앉은 다리 사진(무릎~발)을 나란히.
+  //      앞모습 관절 위치 = tools/body_limbs.py FRONT(캔버스 좌표), 다리 = LEG(사진 0~1). 사진·위치가 없는 외형(미성년자)은 null → 코드 몸
+  const PFA = { sx: 355, sw: 490, x: 6, y: 62, s: 0.8 };   // 앞모습 사진의 x 355~845 를 화면 (6, 62)에 0.8배로
+  function photoFig(e) {
+    const ph = e.photo(), D = BE.draw, legs = D.limbPhoto(e, 'legs'), lm = legs && legs.m.legs, fm = legs && legs.m.front;
+    if (!ph || !lm || !fm) return null;
+    const s = PFA.s, h = H * s, fa = (x, y) => [PFA.x + (x - PFA.sx) * s, PFA.y + y * s];
+    const c = [Math.max(0, lm.R.cx - 0.17), 0.02, Math.min(1, lm.L.cx + 0.17), 0.97];
+    const LB = [PFA.x + PFA.sw * s + 6, PFA.y, h * (c[2] - c[0]) / (c[3] - c[1]), h];
+    const la = (u, v) => [LB[0] + (u - c[0]) / (c[2] - c[0]) * LB[2], LB[1] + (v - c[1]) / (c[3] - c[1]) * LB[3]];
+    const mid = (a, b, t = 0.5) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    const J = { navel: fa(600, 450), above: fa(600, 395), below: fa(600, 487), saddle: fa(600, 588) };
+    for (const [k, d] of SIDES) {
+      const f = fm[k], m = lm[k];
+      for (const j of ['shoulder', 'elbow', 'wrist', 'hip']) J[j + '_' + k] = fa(...f[j]);
+      J['uarm_' + k] = mid(J['shoulder_' + k], J['elbow_' + k]); J['farm_' + k] = mid(J['elbow_' + k], J['wrist_' + k]);
+      J['hand_' + k] = mid(J['elbow_' + k], J['wrist_' + k], 1.12);
+      const kv = m.knee, av = m.ankle;
+      J['thigh_' + k] = la(m.cx, Math.max(c[1] + 0.04, kv - 0.09)); J['knee_' + k] = la(m.cx, kv);
+      J['quad_' + k] = la(m.cx, Math.max(c[1] + 0.03, kv - 0.05));
+      J['shin_' + k] = la(...m.shin); J['shinM_' + k] = la(m.shin[0] - d * 0.035, (kv + av) / 2 + 0.06);
+      J['calfL_' + k] = la(m.cx + d * 0.06, kv + (av - kv) * 0.3); J['calfP_' + k] = la(m.cx + d * 0.055, kv + (av - kv) * 0.7);
+      J['ankle_' + k] = la((m.cx + m.foot[0]) / 2, av); J['foot_' + k] = la(...m.foot); J['mtp_' + k] = la(...m.mtp);
+      J['footL_' + k] = la(m.foot[0] + d * 0.06, m.foot[1] + 0.03);
+    }
+    return {
+      J, la, legsBox: LB,
+      draw(g) {
+        const iw = ph.img.naturalWidth / W;
+        g.drawImage(ph.img, PFA.sx * iw, 0, PFA.sw * iw, ph.img.naturalHeight, PFA.x, PFA.y, PFA.sw * s, h);
+        D.limbBox(g, legs, LB[0], LB[1], LB[2], LB[3], { crop: c });
+        note(g, '환자 오른쪽', PFA.x + 70, PFA.y + h + 22); note(g, '환자 왼쪽', PFA.x + PFA.sw * s - 70, PFA.y + h + 22);
+        note(g, '앉은 다리(무릎 아래)', LB[0] + LB[2] / 2, PFA.y + h + 22);
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+      },
+    };
+  }
+
+  BE.draw.photoFig = photoFig;   // 감각·근력 장면(다음 묶음)도 씀
+
   // ================================================================ 관절 — 서 있는 몸 + 손·발 확대
   const NORM = { shoulder: [180, '어깨 벌리기'], elbow: [150, '팔꿈치 굽히기'], wrist: [70, '손목 젖히기'], hip: [120, '고관절 굽히기'], knee: [135, '무릎 굽히기'], ankle: [50, '발목 움직이기'], mcp: [90, '손가락 마디 굽히기'], pip: [100, '손가락 가운데 마디 굽히기'], mtp1: [70, '엄지발가락 젖히기'] };
   const JN = { shoulder: '어깨', elbow: '팔꿈치', wrist: '손목', hip: '엉덩이(고관절)', knee: '무릎', ankle: '발목', mcp: '손가락 첫마디(MCP)', pip: '손가락 가운데 마디(PIP)', mtp1: '엄지발가락 뿌리' };
@@ -1387,8 +1427,20 @@
   }
   function jointScene(e, g) {
     const p = e.p, J = jointsOf(e), sk = e.skin(); floor(g, 575);
-    const F = figure(e, g, 300, 40, 520, { legR: p.leg === 'short_ext_R' ? 5 : 0, footOutR: p.leg === 'short_ext_R', varus: (J.knee_R || {}).deform === 'varus' || (J.knee_L || {}).deform === 'varus' });
-    for (const [jk, v] of Object.entries(J)) {
+    const PF = jointFig(e);
+    if (PF) {   // 실사 몸: 관절 부기는 사진을 부풀리고 붉은 기는 색을 겹침
+      PF.draw(g);
+      for (const [jk, v] of Object.entries(J)) {
+        const pos = PF.J[jk]; if (!pos || !(v.sw || v.red || v.bursa)) continue;
+        const r = (jk.startsWith('knee') ? 26 : jk.startsWith('shoulder') || jk.startsWith('hip') ? 22 : 15) * (0.8 + (v.sw || 0) * 0.4);
+        if (v.sw) BE.draw.swell(g, pos[0], pos[1], r * 1.3, r * 1.2, 0.08 + v.sw * 0.12);
+        if (v.red || v.sw) BE.draw.tintSpot(g, pos[0], pos[1], r, r * 0.9, '215,90,80', clamp(0.08 + (v.red || 0) * 0.55, 0, 0.6));
+        if (v.bursa) { const bx = pos[0] + (jk.endsWith('R') ? 4 : -4), by = pos[1] + 6; BE.draw.swell(g, bx, by, 18, 16, 0.25); BE.draw.tintSpot(g, bx, by, 14, 12, '215,90,80', 0.35); }
+        if (v.deform === 'fork') { g.strokeStyle = 'rgba(90,50,30,.5)'; g.lineWidth = 3; g.beginPath(); g.arc(pos[0], pos[1] - 4, 12, 3.6, 5.8); g.stroke(); }
+      }
+    }
+    const F = PF ? PF.J : figure(e, g, 300, 40, 520, { legR: p.leg === 'short_ext_R' ? 5 : 0, footOutR: p.leg === 'short_ext_R', varus: (J.knee_R || {}).deform === 'varus' || (J.knee_L || {}).deform === 'varus' });
+    if (!PF) for (const [jk, v] of Object.entries(J)) {
       const pos = F[jk]; if (!pos || !(v.sw || v.red || v.bursa)) continue;
       const r = (jk.startsWith('knee') ? 28 : jk.startsWith('shoulder') || jk.startsWith('hip') ? 26 : 18) * (0.8 + (v.sw || 0) * 0.5);
       ell(g, pos[0], pos[1], r, r * 0.9, mix(sk, '#c8483e', clamp((v.red || 0) * 0.8, 0, 0.65)), LINE);
@@ -1407,9 +1459,16 @@
     }
     return { F, hp };
   }
+  // 관절 장면의 실사 몸. 다리 길이 차이·무릎 휨(내반)은 사진으로 못 그려서 코드 몸
+  function jointFig(e) {
+    const J = jointsOf(e);
+    if (e.p.leg || (J.knee_R || {}).deform === 'varus' || (J.knee_L || {}).deform === 'varus') return null;
+    return photoFig(e);
+  }
   function jointPts(e) {
-    const out = [];
-    const pos = { shoulder: [[300 - 67.6, 133.6], [300 + 67.6, 133.6]], elbow: [[300 - 83.2, 216.8], [300 + 83.2, 216.8]], wrist: [[300 - 93.6, 289.6], [300 + 93.6, 289.6]], hip: [[300 - 36.4, 310.4], [300 + 36.4, 310.4]], knee: [[300 - 39, 419.6], [300 + 39, 419.6]], ankle: [[300 - 36.4, 528.8], [300 + 36.4, 528.8]] };
+    const out = [], PF = jointFig(e);
+    if (PF) for (const j of ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle']) SIDES.forEach(([k]) => { const q = PF.J[j + '_' + k]; out.push({ k: j + '_' + k, x: q[0], y: q[1], n: `${k === 'R' ? '오른쪽' : '왼쪽'} ${JN[j]}` }); });
+    const pos = PF ? {} : { shoulder: [[300 - 67.6, 133.6], [300 + 67.6, 133.6]], elbow: [[300 - 83.2, 216.8], [300 + 83.2, 216.8]], wrist: [[300 - 93.6, 289.6], [300 + 93.6, 289.6]], hip: [[300 - 36.4, 310.4], [300 + 36.4, 310.4]], knee: [[300 - 39, 419.6], [300 + 39, 419.6]], ankle: [[300 - 36.4, 528.8], [300 + 36.4, 528.8]] };
     for (const [j, xy] of Object.entries(pos)) SIDES.forEach(([k], i) => out.push({ k: j + '_' + k, x: xy[i][0], y: xy[i][1], n: `${k === 'R' ? '오른쪽' : '왼쪽'} ${JN[j]}` }));
     const PL = jointLay(e);
     if (PL) { SIDES.forEach(([k]) => ['mcp', 'pip', 'mtp1'].forEach(j => out.push({ k: j + '_' + k, x: PL.pts[j + '_' + k][0], y: PL.pts[j + '_' + k][1], n: `${k === 'R' ? (j === 'mtp1' ? '오른발' : '오른손') : (j === 'mtp1' ? '왼발' : '왼손')} ${JN[j]}` }))); return out; }
@@ -1558,7 +1617,7 @@
 (function () {
   'use strict';
   const BE = window.BodyEngine, S = BE.SCENES, W = 1200, H = 600, CX = 600, mix = BE.mix;
-  const { ell, txt, limb, rrect, face, figure, hand, lying, note, fork, finger, ring, protractor, floor, footShape } = BE.draw;
+  const { ell, txt, limb, rrect, face, figure, hand, lying, note, fork, finger, ring, protractor, floor, footShape, photoFig } = BE.draw;
   const LINE = 'rgba(0,0,0,.35)', SIDES = [['R', -1], ['L', 1]];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = (k) => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
   const SN = (s) => s === 'R' ? '오른쪽' : '왼쪽';
@@ -1634,28 +1693,30 @@
   // ================================================================ 감각 — 몸 그림 + 손·발 확대, 누른 곳마다 환자가 대답
   function sensFig(e, g, legs) {
     floor(g, 575);
-    const F = figure(e, g, 300, 40, 520, { armOut: legs ? 0 : 0.4 });
+    const PF = photoFig(e);
+    const F = PF ? (PF.draw(g), PF.J) : figure(e, g, 300, 40, 520, { armOut: legs ? 0 : 0.4 });
     const hp = {};
     if (!legs) for (const [k, d] of SIDES) { hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 270, 120, d, { palm: true }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', 820 + (d < 0 ? 0 : 240), 410); }
     else for (const [k, d] of SIDES) { const x = 820 + (d < 0 ? 0 : 240), sk = e.skin(); footShape(g, x, 305, 60, 122, -d, sk, { sole: true }); note(g, k === 'R' ? '오른발 바닥' : '왼발 바닥', x, 450); }
     return { F, hp };
   }
   function sensPts(e, legs) {
-    const u = 5.2, cx = 300, top = 40, o = [];
+    const u = 5.2, cx = 300, top = 40, o = [], PF = photoFig(e), P = PF && PF.J;
+    const at = (key, fx, fy) => P ? { x: P[key][0], y: P[key][1] } : { x: fx, y: fy };   // 실사 몸이면 사진 위 지점
     if (!legs) {
       for (const [k, d] of SIDES) {
         const ao = 0.4;
-        o.push({ k: k + '.uarm', x: cx + d * (14.5 + ao * 2.5) * u, y: top + 26 * u, n: `${SN(k)} 위팔` }, { k: k + '.farm', x: cx + d * (17 + ao * 7) * u, y: top + 41 * u, n: `${SN(k)} 아래팔` });
+        o.push({ k: k + '.uarm', ...at('uarm_' + k, cx + d * (14.5 + ao * 2.5) * u, top + 26 * u), n: `${SN(k)} 위팔` }, { k: k + '.farm', ...at('farm_' + k, cx + d * (17 + ao * 7) * u, top + 41 * u), n: `${SN(k)} 아래팔` });
         const x = 820 + (d < 0 ? 0 : 240), ts = -d; // 손바닥에서 엄지는 바깥쪽
         o.push({ k: k + '.thumb', x: x + ts * 0.7 * 120, y: 270 - 0.32 * 120, n: `${SN(k)} 엄지 끝` }, { k: k + '.index', x: x + ts * 0.27 * 120, y: 270 - 0.3 * 120 - 0.55 * 120, n: `${SN(k)} 검지 끝` }, { k: k + '.little', x: x - ts * 0.26 * 120, y: 270 - 0.3 * 120 - 0.5 * 120, n: `${SN(k)} 새끼손가락 끝` }, { k: k + '.web', x: x + ts * 0.3 * 120, y: 270 - 0.1 * 120, n: `${SN(k)} 손등 엄지-검지 사이` });
       }
     } else {
       for (const [k, d] of SIDES) {
-        o.push({ k: k + '.thigh', x: cx + d * 7.2 * u, y: top + 62 * u, n: `${SN(k)} 허벅지 앞` }, { k: k + '.shinM', x: cx + d * 5 * u, y: top + 84 * u, n: `${SN(k)} 정강이 안쪽` }, { k: k + '.calfL', x: cx + d * 10 * u, y: top + 82 * u, n: `${SN(k)} 종아리 바깥쪽` }, { k: k + '.dorsum', x: cx + d * 8.5 * u, y: top + 97 * u, n: `${SN(k)} 발등` });
+        o.push({ k: k + '.thigh', ...at('thigh_' + k, cx + d * 7.2 * u, top + 62 * u), n: `${SN(k)} 허벅지 앞` }, { k: k + '.shinM', ...at('shinM_' + k, cx + d * 5 * u, top + 84 * u), n: `${SN(k)} 정강이 안쪽` }, { k: k + '.calfL', ...at('calfL_' + k, cx + d * 10 * u, top + 82 * u), n: `${SN(k)} 종아리 바깥쪽` }, { k: k + '.dorsum', ...at('foot_' + k, cx + d * 8.5 * u, top + 97 * u), n: `${SN(k)} 발등` });
         const x = 820 + (d < 0 ? 0 : 240);
         o.push({ k: k + '.sole', x: x + d * 40, y: 330, n: `${SN(k)} 발바닥 바깥쪽·새끼발가락` }, { k: k + '.vib', x: x, y: 520, n: `${SN(k)} 안쪽 복사뼈 — 소리굽쇠 진동` }, { k: k + '.propr', x: x - d * 34, y: 175, n: `${SN(k)} 엄지발가락 위치감각(위/아래)` });
       }
-      o.push({ k: 'C.above', x: cx, y: top + 37 * u, n: '배꼽 위' }, { k: 'C.below', x: cx, y: top + 45 * u, n: '배꼽 아래' }, { k: 'C.saddle', x: cx, y: top + 57.5 * u, n: '엉덩이 안쪽·회음부(안장 부위)' });
+      o.push({ k: 'C.above', ...at('above', cx, top + 37 * u), n: '배꼽 위' }, { k: 'C.below', ...at('below', cx, top + 45 * u), n: '배꼽 아래' }, { k: 'C.saddle', ...at('saddle', cx, top + 57.5 * u), n: '엉덩이 안쪽·회음부(안장 부위)' });
     }
     return o;
   }
@@ -1695,27 +1756,30 @@
   const MUS_L = { hip_flex: '고관절 굽히기(허벅지 들기)', knee_ext: '무릎 펴기', ankle_df: '발목 위로 젖히기', ankle_pf: '발목 아래로 누르기', ehl: '엄지발가락 위로 젖히기', evert: '발 바깥으로 돌리기' };
   const DESC = { 5: '검사자가 세게 눌러도 끝까지 버팀', 4: '저항을 어느 정도 이기지만 세게 누르면 밀림', 3: '중력을 이기고 들어 올리지만 조금만 눌러도 밀림', 2: '중력이 없는 옆 방향으로만 움직임', 1: '근육이 움찔하는 것만 보이고 관절은 움직이지 않음', 0: '움직임도 근육 수축도 없음' };
   function grade(p, s, m) { const v = p[s] || {}; return v.all != null ? v.all : v[m] != null ? v[m] : 5; }
-  function powPts(legs) {
-    const u = 5.2, cx = 300, top = 40, o = [];
+  function powPts(e, legs) {
+    const u = 5.2, cx = 300, top = 40, o = [], PF = photoFig(e), P = PF && PF.J;
+    const at = (key, fx, fy, dx = 0, dy = 0) => P ? { x: P[key][0] + dx, y: P[key][1] + dy } : { x: fx, y: fy };   // 실사 몸이면 사진 위 지점
     for (const [k, d] of SIDES) {
       if (!legs) {
-        o.push({ k: k + '.sh_abd', x: cx + d * 13 * u, y: top + 15 * u }, { k: k + '.el_flex', x: cx + d * 14.5 * u, y: top + 26 * u }, { k: k + '.wr_ext', x: cx + d * 17 * u, y: top + 41 * u }, { k: k + '.grip', x: cx + d * 19 * u, y: top + 53 * u });
+        o.push({ k: k + '.sh_abd', ...at('shoulder_' + k, cx + d * 13 * u, top + 15 * u, 0, -8) }, { k: k + '.el_flex', ...at('uarm_' + k, cx + d * 14.5 * u, top + 26 * u) }, { k: k + '.wr_ext', ...at('farm_' + k, cx + d * 17 * u, top + 41 * u) }, { k: k + '.grip', ...at('hand_' + k, cx + d * 19 * u, top + 53 * u) });
         const x = 820 + (d < 0 ? 0 : 240);
         o.push({ k: k + '.fing_ext', x, y: 120 }, { k: k + '.fing', x: x - d * 40, y: 180 }, { k: k + '.thumb', x: x + d * 80, y: 230 });
       } else {
-        o.push({ k: k + '.hip_flex', x: cx + d * 7 * u, y: top + 57 * u }, { k: k + '.knee_ext', x: cx + d * 7.3 * u, y: top + 67 * u }, { k: k + '.ankle_df', x: cx + d * 7.3 * u, y: top + 82 * u }, { k: k + '.ankle_pf', x: cx + d * 11 * u, y: top + 86 * u }, { k: k + '.ehl', x: cx + d * 9 * u, y: top + 99 * u }, { k: k + '.evert', x: cx + d * 12.5 * u, y: top + 96 * u });
+        o.push({ k: k + '.hip_flex', ...at('hip_' + k, cx + d * 7 * u, top + 57 * u) }, { k: k + '.knee_ext', ...at('quad_' + k, cx + d * 7.3 * u, top + 67 * u) }, { k: k + '.ankle_df', ...at('shin_' + k, cx + d * 7.3 * u, top + 82 * u) }, { k: k + '.ankle_pf', ...at('calfP_' + k, cx + d * 11 * u, top + 86 * u) }, { k: k + '.ehl', ...at('mtp_' + k, cx + d * 9 * u, top + 99 * u) }, { k: k + '.evert', ...at('footL_' + k, cx + d * 12.5 * u, top + 96 * u) });
       }
     }
     for (const q of o) { const [s, m] = q.k.split('.'); q.n = `${SN(s)} ${(legs ? MUS_L : MUS_A)[m]} — 버티게 하기`; }
-    if (legs) o.push({ k: 'hoover', x: 600, y: 520, n: 'Hoover 검사 — 누워서 한쪽 다리를 들 때 반대쪽 발뒤꿈치 힘' });
+    if (legs) o.push({ k: 'hoover', x: P ? 940 : 600, y: P ? 300 : 520, n: 'Hoover 검사 — 누워서 한쪽 다리를 들 때 반대쪽 발뒤꿈치 힘' });
     return o;
   }
   function powDraw(g, legs) {
-    floor(g, 575); figure(this, g, 300, 40, 520, {});
+    floor(g, 575); const PF = photoFig(this);
+    if (PF) PF.draw(g); else figure(this, g, 300, 40, 520, {});
     if (!legs) for (const [k, d] of SIDES) { hand(this, g, 820 + (d < 0 ? 0 : 240), 200, 110, d, {}); note(g, k === 'R' ? '오른손' : '왼손', 820 + (d < 0 ? 0 : 240), 300); }
+    else if (PF) rrect(g, 810, 260, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
     else rrect(g, 470, 480, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
     if (this.sel && this.sel.k !== 'hoover') {
-      const [s, m] = this.sel.k.split('.'), gr = grade(this.p, s, m), kk = this.since(), x = this.sel.x + (s === 'R' ? -150 : 30), y = this.sel.y - 30;
+      const [s, m] = this.sel.k.split('.'), gr = grade(this.p, s, m), kk = this.since(), x = clamp(this.sel.x + (s === 'R' ? -150 : 30), 8, W - 130), y = this.sel.y - 30;
       rrect(g, x, y, 120, 18, 9, '#1a2529', 'rgba(150,200,190,.4)');
       rrect(g, x, y, 120 * gr / 5 * ease(kk / 1.2), 18, 9, gr >= 5 ? '#7ec8a8' : gr >= 4 ? '#e8d7a6' : '#e88a70');
       txt(g, '버티는 힘', x + 60, y - 6, { size: 12, c: '#93a8a3', al: 'center' });
@@ -1731,8 +1795,8 @@
     const say = m === 'sh_abd' && p.fatigue ? '자꾸 하니까 팔이 점점 무거워져요.' : gr <= 2 ? '…힘이 안 들어가요.' : gr === 3 ? '으… 이게 다예요.' : gr === 4 ? '이게 최선이에요.' : '';
     return { felt, say };
   }
-  S.parm = { pts() { return powPts(false); }, draw(g) { powDraw.call(this, g, false); }, exam: powExam, hint: '동그라미를 누르면 그 근육으로 버티게 하고, 힘 막대로 보여 줍니다' };
-  S.pleg = { pts() { return powPts(true); }, draw(g) { powDraw.call(this, g, true); }, exam: powExam, hint: '동그라미를 누르면 그 근육으로 버티게 하고, 힘 막대로 보여 줍니다' };
+  S.parm = { pts() { return powPts(this, false); }, draw(g) { powDraw.call(this, g, false); }, exam: powExam, hint: '동그라미를 누르면 그 근육으로 버티게 하고, 힘 막대로 보여 줍니다' };
+  S.pleg = { pts() { return powPts(this, true); }, draw(g) { powDraw.call(this, g, true); }, exam: powExam, hint: '동그라미를 누르면 그 근육으로 버티게 하고, 힘 막대로 보여 줍니다' };
 
   // ================================================================ 뇌막 자극 — 목 굽히기(Brudzinski)·Kernig
   S.mening = {
