@@ -152,6 +152,33 @@
     }
     g.fillStyle = 'rgba(232,215,166,.75)'; g.font = '13px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'right'; g.fillText('AI 생성 이미지', W - 16, H - 12);
   }
+  // 안면 운동 실사(tools/genai_expr.py): 정상 얼굴 위에 표정 사진(st)을 얼굴 반쪽마다 다른 세기로 겹침.
+  // aR·aL = 환자 오른쪽(화면 왼쪽)·왼쪽 반의 표정 세기 0~1 → 마비 쪽은 0 에 가까워 '가만히' 얼굴이 남음. 가운데 선은 부드럽게 이음.
+  // o 는 정상 얼굴에 넘기는 값(눈 깜빡임·마비 쪽 덜 감긴 눈). 표정 사진이 없거나 아직 안 읽혔으면 false → 코드 얼굴
+  function exprFace(e, g, cx, cy, s, st, aR, aL, o) {
+    const d = facePhoto(e); if (!d || !d.expr) return false;
+    let X = null;
+    if (st !== 'rest') {
+      d.eimg = d.eimg || {};
+      if (!d.expr[st]) return false;
+      if (!d.eimg[st]) { d.eimg[st] = new Image(); d.eimg[st].onload = () => e.draw(); d.eimg[st].src = d.expr[st]; }
+      X = d.eimg[st]; if (!(X.complete && X.naturalWidth)) return false;
+    }
+    photoFace(e, g, cx, cy, s, o || {}, d);
+    if (!X || (aR <= 0.01 && aL <= 0.01)) return true;
+    const img = d.img, iw = img.naturalWidth, ih = img.naturalHeight, [R, L] = d.eyes;
+    const k = 0.62 * s / ((L[0] - R[0]) * iw), x0 = cx - (R[0] + L[0]) / 2 * iw * k, y0 = cy - 0.08 * s - (R[1] + L[1]) / 2 * ih * k, w = iw * k, h = ih * k;
+    const c = BE.scratch(3), t = c.getContext('2d'), mid = x0 + (R[0] + L[0]) / 2 * w, f = 0.035 * w;
+    t.clearRect(0, 0, W, H); t.drawImage(X, x0, y0, w, h); t.globalCompositeOperation = 'destination-in';
+    const gx = t.createLinearGradient(mid - f, 0, mid + f, 0);
+    gx.addColorStop(0, `rgba(0,0,0,${clamp(aR, 0, 1)})`); gx.addColorStop(1, `rgba(0,0,0,${clamp(aL, 0, 1)})`);
+    t.fillStyle = gx; t.fillRect(0, 0, W, H);
+    t.globalCompositeOperation = 'destination-out';   // 아래 끝 흐리게(정상 얼굴과 같게). destination-in 은 사각형 밖을 지워서 out 으로
+    const gy = t.createLinearGradient(0, y0 + h * 0.82, 0, y0 + h); gy.addColorStop(0, 'rgba(0,0,0,0)'); gy.addColorStop(1, 'rgba(0,0,0,1)');
+    t.fillStyle = gy; t.fillRect(0, y0 + h * 0.82, W, h * 0.18 + 1); t.globalCompositeOperation = 'source-over';
+    g.drawImage(c, 0, 0);
+    return true;
+  }
 
   // ---- 실사 손·다리(BodyEngine.LIMBS, tools/body_limbs.py — 피부 진찰실 정상 사진을 환자 오른손 방향으로 맞춘 것)
   //      kind: 'palm' 오른손 손바닥 · 'dorsum' 오른손 손등 · 'legs' 앉은 정강이·발. 왼손은 좌우 뒤집어 그림
@@ -321,7 +348,7 @@
   }
 
   // 공용으로 다른 장면에서도 씀
-  BE.draw = { ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
+  BE.draw = { exprFace, ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
   BE.draw.limbPhoto = limbPhoto; BE.draw.limbBox = limbBox; BE.draw.swell = swell; BE.draw.tintSpot = tintSpot;
 
   // ================================================================ 의식
@@ -1654,17 +1681,36 @@
     o.teeth = st === 'smile' && ph > 0.3; o.open = o.teeth ? 0.1 : 0;
     o.puff = st === 'puff' ? ph * amp : 0;
     if (st === 'rest' && (e.t % (p.masked ? 9 : 4)) < 0.15) { o.eR = 0.05; o.eL = 0.05; }
-    return { o, step };
+    return { o, step, ph, amp };
+  }
+  // 실사 표정의 얼굴 반쪽별 세기. 말초성(lmn) 마비 = 그쪽 이마·눈·입 모두 약함(눈은 덜 감김), 중추성(umn) = 이마는 정상, 입만 약함
+  function exprW(e, F) {
+    const p = e.p, st = STEPS[F.step][0], ph = F.ph, amp = F.amp, o = { eR: F.o.eR, eL: F.o.eL }, a = {};
+    const weak = (s) => p[s] === 'lmn' || p[s] === 'weak' ? 'lmn' : p[s] === 'umn' ? 'umn' : '';
+    for (const [s] of SIDES) {
+      const w = weak(s);
+      a[s] = st === 'brow' ? ph * amp * (w === 'lmn' ? 0 : 1)
+        : st === 'close' ? ph * (w === 'lmn' ? 0 : w === 'umn' ? 0.85 : 1)
+        : st === 'smile' ? ph * amp * (w === 'lmn' ? 0 : w === 'umn' ? 0.15 : 1)
+        : st === 'puff' ? ph * amp * (w ? 0.25 : 1) : 0;
+      if (st === 'close' && w === 'lmn') o['e' + s] = 1 - 0.25 * ph;   // 거의 안 감기는 눈(정상 얼굴에 눈꺼풀을 칠함)
+    }
+    return { st, aR: a.R, aL: a.L, o };
   }
   S.fmotor = {
     pts() { return [{ k: 'chv_R', x: 430, y: 300, n: '오른쪽 귀 앞 볼 두드리기(Chvostek)' }, { k: 'chv_L', x: 770, y: 300, n: '왼쪽 귀 앞 볼 두드리기' }]; },
     hint: '진찰하기를 누르면 표정 짓기를 차례로 시킵니다',
     draw(g) {
-      floor(g, 560); const { o, step } = fexpr(this), p = this.p;
+      floor(g, 560); const F = fexpr(this), { o, step } = F, p = this.p;
       if (this.act && this.act.k.startsWith('chv') && p.chvostek && this.since() < 0.6) { const s = this.act.k.slice(-1); o['m' + s] = 0.5 * Math.sin(this.since() * 40); }
-      if (o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 125, 380, 50 * o.puff * (w ? 0.4 : 1), 46 * o.puff * (w ? 0.4 : 1), this.skin()); }
-      face(this, g, 600, 280, 210, Object.assign({ code: true }, o));
-      if (o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 110, 360, 55 * o.puff * (w ? 0.35 : 1), 45 * o.puff * (w ? 0.35 : 1), this.skin()); }
+      const X = exprW(this, F);
+      if (this.act && this.act.k.startsWith('chv') && p.chvostek && this.since() < 0.6 && X.st === 'rest') {   // 입꼬리 씰룩: 그쪽 반만 웃는 사진을 잠깐씩
+        X.st = 'smile'; X['a' + this.act.k.slice(-1)] = Math.max(0, Math.sin(this.since() * 40)) * 0.45;
+      }
+      const photo = BE.draw.exprFace(this, g, 600, 280, 210, X.st, X.aR, X.aL, X.o);
+      if (!photo && o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 125, 380, 50 * o.puff * (w ? 0.4 : 1), 46 * o.puff * (w ? 0.4 : 1), this.skin()); }
+      if (!photo) face(this, g, 600, 280, 210, Object.assign({ code: true }, o));
+      if (!photo && o.puff) for (const [s, d] of SIDES) { const w = p[s] === 'lmn' || p[s] === 'weak'; ell(g, 600 + d * 110, 360, 55 * o.puff * (w ? 0.35 : 1), 45 * o.puff * (w ? 0.35 : 1), this.skin()); }
       rrect(g, 830, 40, 340, 46, 12, 'rgba(232,215,166,.92)'); txt(g, STEPS[step][1], 1000, 70, { size: 17, w: 600, c: '#1a2529', al: 'center' });
       if (this.act && this.act.k.startsWith('chv') && this.since() < 1) finger(g, this.act.k === 'chv_R' ? 430 : 770, 300, 1);
     },
