@@ -1625,6 +1625,20 @@
     },
   };
   const MOV = { flex: [80, '앞으로 굽히기'], ext: [25, '뒤로 젖히기'], latR: [30, '오른쪽으로 옆 굽히기'], latL: [30, '왼쪽으로 옆 굽히기'], rotR: [40, '오른쪽으로 돌리기'], rotL: [40, '왼쪽으로 돌리기'] };
+  // 실사 서 있는 옆모습(tools/genai_scenes.py layers stand): 배경판 위에 상체 조각을 고관절 둘레로 기울임. bend > 0 = 앞으로 굽힘(앞 = 화면 오른쪽)
+  function standPhoto(e, g, bend) {
+    const P = BE.draw.scenePhoto(e, 'stand', 'plate'), U = BE.draw.scenePhoto(e, 'stand', 'upper');
+    if (!P || !U || !P.marks.hip) return false;
+    const m = P.marks, iw = P.img.naturalWidth, ih = P.img.naturalHeight, bh = 440 / (m.feet - m.top), bw = bh * iw / ih;
+    const x0 = 250 - m.hip[0] * bw, y0 = 515 - m.feet * bh, hip = [x0 + m.hip[0] * bw, y0 + m.hip[1] * bh], uMax = Math.min(1, (560 - x0) / bw);
+    g.save(); g.beginPath(); g.rect(0, 0, 560, H); g.clip();
+    g.drawImage(P.img, 0, 0, iw * uMax, ih, x0, y0, bw * uMax, bh);
+    const fx = Math.min(560, x0 + bw * uMax), gr = g.createLinearGradient(fx - 90, 0, fx, 0);   // 오른쪽 끝을 배경색으로 녹임
+    gr.addColorStop(0, 'rgba(16,22,25,0)'); gr.addColorStop(1, 'rgba(16,22,25,1)'); g.fillStyle = gr; g.fillRect(fx - 90, y0, 92, bh);
+    g.restore();
+    g.save(); g.translate(hip[0], hip[1]); g.rotate(bend * Math.PI / 180); g.translate(-hip[0], -hip[1]); g.drawImage(U.img, x0, y0, bw, bh); g.restore();
+    return true;
+  }
   S.backrom = {
     pts() { return Object.keys(MOV).map((k, i) => ({ k, x: 560 + i * 110, y: 95, n: MOV[k][1] })); },
     hint: '아래 동그라미를 눌러 허리 움직임을 시켜 보세요',
@@ -1633,12 +1647,15 @@
       const deg = m ? MOV[m][0] * ((p.rom || {})[m] == null ? 1 : p.rom[m]) * ease(kk / 1.8) * (kk > 5 ? Math.max(0, 1 - (kk - 5)) : 1) : 0;
       floor(g, 520);
       const sk = this.skin(), hip = [330, 330], sgn = m === 'ext' ? 1 : -1, a = (m === 'flex' || m === 'ext' ? sgn * deg : 0) * Math.PI / 180;
+      const photo = standPhoto(this, g, m === 'flex' ? deg : m === 'ext' ? -deg : 0);
+      if (!photo) {
       limb(g, [hip, [330, 420], [330, 510]], 34, sk);
       const top = [hip[0] + Math.sin(-a) * 190, hip[1] - Math.cos(a) * 190];
       limb(g, [hip, top], 60, sk); ell(g, top[0] + Math.sin(-a) * 45, top[1] - Math.cos(a) * 45, 36, 36, sk, LINE);
       limb(g, [[top[0] + Math.sin(-a) * -10, top[1] + 10], [top[0] + Math.sin(-a) * -10, top[1] + 150]], 20, sk);
       g.fillStyle = '#5f7f9a'; g.fillRect(300, 300, 62, 70);
-      note(g, '옆에서(앞 = 오른쪽)', 330, 30);
+      }
+      note(g, '옆에서(앞 = 오른쪽)', photo ? 250 : 330, 30);
       g.save(); g.translate(500, 0); g.scale(0.62, 0.62); g.translate(0, 150);
       backView(this, g, m === 'latR' ? deg : m === 'latL' ? -deg : 0, m === 'rotR' || m === 'rotL' ? deg : 0);
       g.restore();
