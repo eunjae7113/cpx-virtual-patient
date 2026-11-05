@@ -348,7 +348,14 @@
   }
 
   // 공용으로 다른 장면에서도 씀
-  BE.draw = { exprFace, ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
+  // 남은 장면 실사 사진(BodyEngine.SCENEPH, tools/genai_scenes.py): 묶음·이름 → {img, marks}. 없거나 아직 안 읽혔으면 null → 코드 그림
+  function scenePhoto(e, set, name) {
+    const d = !e.noPhoto && (((BE.SCENEPH || {})[set] || {})[e.av] || {})[name];
+    if (!d) return null;
+    if (!d.img) { d.img = new Image(); d.img.onload = () => e.draw(); d.img.src = d.src; }
+    return d.img.complete && d.img.naturalWidth ? d : null;
+  }
+  BE.draw = { scenePhoto, exprFace, ell, txt, limb, rrect, face, figure, hand, lying, inset, note, dots, finger, fork, ring, protractor, floor, footShape, taper };
   BE.draw.limbPhoto = limbPhoto; BE.draw.limbBox = limbBox; BE.draw.swell = swell; BE.draw.tintSpot = tintSpot;
 
   // ================================================================ 의식
@@ -1759,8 +1766,25 @@
     const PL = !legs && palmLay(e);
     if (PL) PL.draw(g);
     else if (!legs) for (const [k, d] of SIDES) { hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 270, 120, d, { palm: true }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', 820 + (d < 0 ? 0 : 240), 410); }
+    else if (soleLay(e)) soleLay(e).draw(g);
     else for (const [k, d] of SIDES) { const x = 820 + (d < 0 ? 0 : 240), sk = e.skin(); footShape(g, x, 305, 60, 122, -d, sk, { sole: true }); note(g, k === 'R' ? '오른발 바닥' : '왼발 바닥', x, 450); }
     return { F, hp };
+  }
+  // 실사 발바닥(누운 환자의 양 발바닥, 발끝 쪽에서 봄 — 오른발 = 화면 왼쪽). 지점은 tools/genai_scenes.py MARKS
+  const SB = [735, 60, 450, 450];
+  function soleLay(e) {
+    const ph = BE.draw.scenePhoto(e, 'sole', 'soles'), m = ph && ph.marks;
+    if (!m || !m.R) return null;
+    const at = (uv) => [SB[0] + uv[0] * SB[2], SB[1] + uv[1] * SB[3]];
+    return {
+      m, at,
+      draw(g) {
+        g.save(); g.beginPath(); g.roundRect ? g.roundRect(SB[0], SB[1], SB[2], SB[3], 14) : g.rect(SB[0], SB[1], SB[2], SB[3]); g.clip();
+        g.drawImage(ph.img, SB[0], SB[1], SB[2], SB[3]); g.restore();
+        note(g, '오른발 바닥', SB[0] + SB[2] * 0.3, SB[1] + SB[3] + 22); note(g, '왼발 바닥', SB[0] + SB[2] * 0.7, SB[1] + SB[3] + 22);
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+      },
+    };
   }
   function sensPts(e, legs) {
     const u = 5.2, cx = 300, top = 40, o = [], PF = photoFig(e), P = PF && PF.J;
@@ -1777,6 +1801,8 @@
       for (const [k, d] of SIDES) {
         o.push({ k: k + '.thigh', ...at('thigh_' + k, cx + d * 7.2 * u, top + 62 * u), n: `${SN(k)} 허벅지 앞` }, { k: k + '.shinM', ...at('shinM_' + k, cx + d * 5 * u, top + 84 * u), n: `${SN(k)} 정강이 안쪽` }, { k: k + '.calfL', ...at('calfL_' + k, cx + d * 10 * u, top + 82 * u), n: `${SN(k)} 종아리 바깥쪽` }, { k: k + '.dorsum', ...at('foot_' + k, cx + d * 8.5 * u, top + 97 * u), n: `${SN(k)} 발등` });
         const x = 820 + (d < 0 ? 0 : 240);
+        const SL = soleLay(e);
+        if (SL) { const q = (j) => { const [px, py] = SL.at(SL.m[k][j]); return { x: px, y: py }; }; o.push({ k: k + '.sole', ...q('sole'), n: `${SN(k)} 발바닥 바깥쪽·새끼발가락` }, { k: k + '.vib', ...q('vib'), n: `${SN(k)} 안쪽 복사뼈 — 소리굽쇠 진동` }, { k: k + '.propr', ...q('propr'), n: `${SN(k)} 엄지발가락 위치감각(위/아래)` }); continue; }
         o.push({ k: k + '.sole', x: x + d * 40, y: 330, n: `${SN(k)} 발바닥 바깥쪽·새끼발가락` }, { k: k + '.vib', x: x, y: 520, n: `${SN(k)} 안쪽 복사뼈 — 소리굽쇠 진동` }, { k: k + '.propr', x: x - d * 34, y: 175, n: `${SN(k)} 엄지발가락 위치감각(위/아래)` });
       }
       o.push({ k: 'C.above', ...at('above', cx, top + 37 * u), n: '배꼽 위' }, { k: 'C.below', ...at('below', cx, top + 45 * u), n: '배꼽 아래' }, { k: 'C.saddle', ...at('saddle', cx, top + 57.5 * u), n: '엉덩이 안쪽·회음부(안장 부위)' });
