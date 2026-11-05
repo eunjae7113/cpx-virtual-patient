@@ -181,10 +181,10 @@
 
   // 진찰실 배경 하나(모든 부위·사진 공통): 위는 밝은 벽, 아래로 조금 어둡게, 가운데 은은한 빛
   SkinEngine.prototype.drawRoom = function (c) {
-    const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#e4e8ec'); bg.addColorStop(1, '#c3cad1');
+    const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#7d8a98'); bg.addColorStop(1, '#5a6672');   // 중간 회청색: 흰머리·흰 피부가 배경에 묻히지 않게
     c.fillStyle = bg; c.fillRect(0, 0, W, H);
     const g = c.createRadialGradient(W / 2, H * 0.45, 40, W / 2, H * 0.5, W * 0.6);
-    g.addColorStop(0, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    g.addColorStop(0, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = g; c.fillRect(0, 0, W, H);
   };
 
@@ -208,8 +208,10 @@
   SkinEngine.prototype.camHome = function () {
     const m = this.faceMarks();
     if (this.photo && m) {
-      const r = this.layout();
-      return { s: 1.5, x: r.x + r.w * (m.eyes[0][0] + m.eyes[1][0]) / 2, y: r.y + r.h * ((m.eyes[0][1] + m.mouth[1]) / 2 + 0.02) };
+      // 머리 꼭대기(흰머리 포함)부터 어깨까지 들어오게: 눈~입 거리로 정수리를 어림(눈 위 1.7배), 1.5배보다 더 당기지 않음
+      const r = this.layout(), ey = (m.eyes[0][1] + m.eyes[1][1]) / 2, d = m.mouth[1] - ey;
+      const top = Math.max(0, ey - 1.7 * d - 0.03), bot = Math.min(1, m.mouth[1] + 0.25), s = Math.min(1.5, 1 / (bot - top));
+      return { s, x: r.x + r.w * (m.eyes[0][0] + m.eyes[1][0]) / 2, y: r.y + r.h * (top + bot) / 2 };
     }
     return { s: 1, x: W / 2, y: H / 2 };
   };
