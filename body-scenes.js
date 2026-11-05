@@ -1691,12 +1691,28 @@
   };
 
   // ================================================================ 감각 — 몸 그림 + 손·발 확대, 누른 곳마다 환자가 대답
+  // 실사 손바닥(피부 진찰실 정상 손, tools/body_limbs.py — 손끝 위치는 손 모양에서 자동으로 찾음). 오른손 = 화면 왼쪽(엄지 바깥), 왼손은 뒤집음
+  const PB2 = { R: [748, 40, 205, 410], L: [978, 40, 205, 410] };
+  function palmLay(e) {
+    const D = BE.draw, palm = D.limbPhoto(e, 'palm'), pm = palm && palm.m.palm;
+    if (!pm || !pm.index) return null;
+    const at = (k, uv) => { const b = PB2[k]; return [b[0] + (k === 'L' ? 1 - uv[0] : uv[0]) * b[2], b[1] + uv[1] * b[3]]; };
+    return {
+      pm, at,
+      draw(g) {
+        for (const [k] of SIDES) { const b = PB2[k]; D.limbBox(g, palm, b[0], b[1], b[2], b[3], { flip: k === 'L' }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', b[0] + b[2] / 2, b[1] + b[3] + 22); }
+        txt(g, 'AI 생성 이미지', W - 16, H - 12, { size: 13, c: 'rgba(232,215,166,.75)', al: 'right' });
+      },
+    };
+  }
   function sensFig(e, g, legs) {
     floor(g, 575);
     const PF = photoFig(e);
     const F = PF ? (PF.draw(g), PF.J) : figure(e, g, 300, 40, 520, { armOut: legs ? 0 : 0.4 });
     const hp = {};
-    if (!legs) for (const [k, d] of SIDES) { hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 270, 120, d, { palm: true }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', 820 + (d < 0 ? 0 : 240), 410); }
+    const PL = !legs && palmLay(e);
+    if (PL) PL.draw(g);
+    else if (!legs) for (const [k, d] of SIDES) { hp[k] = hand(e, g, 820 + (d < 0 ? 0 : 240), 270, 120, d, { palm: true }); note(g, k === 'R' ? '오른손(손바닥)' : '왼손(손바닥)', 820 + (d < 0 ? 0 : 240), 410); }
     else for (const [k, d] of SIDES) { const x = 820 + (d < 0 ? 0 : 240), sk = e.skin(); footShape(g, x, 305, 60, 122, -d, sk, { sole: true }); note(g, k === 'R' ? '오른발 바닥' : '왼발 바닥', x, 450); }
     return { F, hp };
   }
@@ -1707,7 +1723,8 @@
       for (const [k, d] of SIDES) {
         const ao = 0.4;
         o.push({ k: k + '.uarm', ...at('uarm_' + k, cx + d * (14.5 + ao * 2.5) * u, top + 26 * u), n: `${SN(k)} 위팔` }, { k: k + '.farm', ...at('farm_' + k, cx + d * (17 + ao * 7) * u, top + 41 * u), n: `${SN(k)} 아래팔` });
-        const x = 820 + (d < 0 ? 0 : 240), ts = -d; // 손바닥에서 엄지는 바깥쪽
+        const x = 820 + (d < 0 ? 0 : 240), ts = -d, PL = palmLay(e); // 손바닥에서 엄지는 바깥쪽
+        if (PL) { const q = (j) => { const [hx, hy] = PL.at(k, PL.pm[j]); return { x: hx, y: hy }; }; o.push({ k: k + '.thumb', ...q('thumb'), n: `${SN(k)} 엄지 끝` }, { k: k + '.index', ...q('index'), n: `${SN(k)} 검지 끝` }, { k: k + '.little', ...q('little'), n: `${SN(k)} 새끼손가락 끝` }, { k: k + '.web', ...q('web'), n: `${SN(k)} 엄지-검지 사이` }); continue; }
         o.push({ k: k + '.thumb', x: x + ts * 0.7 * 120, y: 270 - 0.32 * 120, n: `${SN(k)} 엄지 끝` }, { k: k + '.index', x: x + ts * 0.27 * 120, y: 270 - 0.3 * 120 - 0.55 * 120, n: `${SN(k)} 검지 끝` }, { k: k + '.little', x: x - ts * 0.26 * 120, y: 270 - 0.3 * 120 - 0.5 * 120, n: `${SN(k)} 새끼손가락 끝` }, { k: k + '.web', x: x + ts * 0.3 * 120, y: 270 - 0.1 * 120, n: `${SN(k)} 손등 엄지-검지 사이` });
       }
     } else {
@@ -1763,7 +1780,8 @@
       if (!legs) {
         o.push({ k: k + '.sh_abd', ...at('shoulder_' + k, cx + d * 13 * u, top + 15 * u, 0, -8) }, { k: k + '.el_flex', ...at('uarm_' + k, cx + d * 14.5 * u, top + 26 * u) }, { k: k + '.wr_ext', ...at('farm_' + k, cx + d * 17 * u, top + 41 * u) }, { k: k + '.grip', ...at('hand_' + k, cx + d * 19 * u, top + 53 * u) });
         const x = 820 + (d < 0 ? 0 : 240);
-        o.push({ k: k + '.fing_ext', x, y: 120 }, { k: k + '.fing', x: x - d * 40, y: 180 }, { k: k + '.thumb', x: x + d * 80, y: 230 });
+        const PL = palmLay(e), q = (j, fx, fy) => { if (!PL) return { x: fx, y: fy }; const [hx, hy] = PL.at(k, PL.pm[j]); return { x: hx, y: hy }; };
+        o.push({ k: k + '.fing_ext', ...q('fing_ext', x, 120) }, { k: k + '.fing', ...q('fing', x - d * 40, 180) }, { k: k + '.thumb', ...q('thumb_abd', x + d * 80, 230) });
       } else {
         o.push({ k: k + '.hip_flex', ...at('hip_' + k, cx + d * 7 * u, top + 57 * u) }, { k: k + '.knee_ext', ...at('quad_' + k, cx + d * 7.3 * u, top + 67 * u) }, { k: k + '.ankle_df', ...at('shin_' + k, cx + d * 7.3 * u, top + 82 * u) }, { k: k + '.ankle_pf', ...at('calfP_' + k, cx + d * 11 * u, top + 86 * u) }, { k: k + '.ehl', ...at('mtp_' + k, cx + d * 9 * u, top + 99 * u) }, { k: k + '.evert', ...at('footL_' + k, cx + d * 12.5 * u, top + 96 * u) });
       }
@@ -1775,7 +1793,9 @@
   function powDraw(g, legs) {
     floor(g, 575); const PF = photoFig(this);
     if (PF) PF.draw(g); else figure(this, g, 300, 40, 520, {});
-    if (!legs) for (const [k, d] of SIDES) { hand(this, g, 820 + (d < 0 ? 0 : 240), 200, 110, d, {}); note(g, k === 'R' ? '오른손' : '왼손', 820 + (d < 0 ? 0 : 240), 300); }
+    const PL = !legs && palmLay(this);
+    if (PL) PL.draw(g);
+    else if (!legs) for (const [k, d] of SIDES) { hand(this, g, 820 + (d < 0 ? 0 : 240), 200, 110, d, {}); note(g, k === 'R' ? '오른손' : '왼손', 820 + (d < 0 ? 0 : 240), 300); }
     else if (PF) rrect(g, 810, 260, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
     else rrect(g, 470, 480, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
     if (this.sel && this.sel.k !== 'hoover') {
