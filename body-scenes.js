@@ -320,7 +320,32 @@
     return pos;
   }
   // 누운 몸 옆모습(머리 왼쪽). a: neck 목 굽힘(도), hipN/kneeN 가까운 다리 고관절·무릎 굽힘, hipF/kneeF 먼 다리
+  // 실사 누운 옆모습(tools/genai_scenes.py layers lying): 배경판 위에 머리·허벅지·종아리 조각을 관절 둘레로 돌려 그림.
+  // 엉덩이를 코드 그림과 같은 (600, 355)에 놓아 각도기·지점 좌표가 그대로 맞음. 먼 쪽 다리는 같은 조각을 어둡게 뒤에 그림
+  function lyingPhoto(e, g, a) {
+    const P = {};
+    for (const n of ['plate', 'head', 'thigh', 'shank']) { P[n] = BE.draw.scenePhoto(e, 'lying', n); if (!P[n]) return null; }
+    const m = P.plate.marks; if (!m || !m.hip) return null;
+    const bw = 940, bh = bw * P.plate.img.naturalHeight / P.plate.img.naturalWidth, x0 = 600 - m.hip[0] * bw, y0 = 355 - m.hip[1] * bh;
+    const at = (u, v) => [x0 + u * bw, y0 + v * bh], hip = at(...m.hip), kn0 = at(...m.knee), an0 = at(...m.ankle), nk = at(...m.neck);
+    const rot = (p, c, deg) => { const t = deg * Math.PI / 180, dx = p[0] - c[0], dy = p[1] - c[1]; return [c[0] + dx * Math.cos(t) - dy * Math.sin(t), c[1] + dx * Math.sin(t) + dy * Math.cos(t)]; };
+    const img = (n) => g.drawImage(P[n].img, x0, y0, bw, bh);
+    const leg = (hf, kf, far) => {
+      g.save(); if (far) { g.filter = 'brightness(0.86)'; g.translate(2, -3); }
+      g.translate(hip[0], hip[1]); g.rotate(-hf * Math.PI / 180); g.translate(-hip[0], -hip[1]); img('thigh');
+      g.translate(kn0[0], kn0[1]); g.rotate(kf * Math.PI / 180); g.translate(-kn0[0], -kn0[1]); img('shank'); g.restore();
+      const kn = rot(kn0, hip, -hf); return { kn, an: rot(rot(an0, kn0, kf), hip, -hf) };
+    };
+    img('plate');
+    leg(a.hipF || 0, a.kneeF || 0, true);
+    const nd = a.neck || 0;
+    g.save(); g.translate(nk[0], nk[1]); g.rotate(nd * Math.PI / 180); g.translate(-nk[0], -nk[1]); img('head'); g.restore();
+    const near = leg(a.hipN || 0, a.kneeN || 0, false);
+    txt(g, 'AI 생성 이미지', x0 + bw - 8, y0 + bh - 8, { size: 13, c: 'rgba(60,60,60,.7)', al: 'right' });
+    return { hip, hc: rot(at(0.09, 0.56), nk, nd), ...near, photo: true };
+  }
   function lying(e, g, a) {
+    const PH = lyingPhoto(e, g, a); if (PH) return PH;
     const sk = e.skin(), by = 400, hip = [600, by - 45];
     rrect(g, 120, by, 960, 26, 6, '#3b4a52'); g.fillStyle = '#2f3c43'; g.fillRect(150, by + 26, 20, 120); g.fillRect(1030, by + 26, 20, 120);
     const leg = (hf, kf, far) => {
@@ -1892,10 +1917,15 @@
 
   // ================================================================ 뇌막 자극 — 목 굽히기(Brudzinski)·Kernig
   S.mening = {
-    pts() { return [{ k: 'neck', x: 235, y: 290, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 820, y: 300, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }]; },
+    pts() {
+      if (BE.draw.scenePhoto(this, 'lying', 'plate')) return [{ k: 'neck', x: 290, y: 395, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 713, y: 405, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }];   // 실사: 0.8배로 줄여 그림(아래 draw)
+      return [{ k: 'neck', x: 235, y: 290, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 820, y: 300, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }];
+    },
     hint: '머리 동그라미 = 목 굽히기, 다리 동그라미 = Kernig 검사',
     draw(g) {
       floor(g, 560); const p = this.p, k = this.act ? this.act.k : null, kk = this.since(), back = kk > 5 ? Math.max(0, 1 - (kk - 5) / 1.2) : 1;
+      const PH = !!BE.draw.scenePhoto(this, 'lying', 'plate');
+      g.save(); if (PH) { g.translate(120, 130); g.scale(0.8, 0.8); }   // 실사는 들어 올린 다리가 화면 안에 들어오게 줄임(SLR 과 같게)
       if (k === 'neck') {
         const max = 45 * (1 - 0.8 * (p.stiff || 0)), pr = ease(kk / 2) * back, br = p.brudz ? pr : 0;
         lying(this, g, { neck: max * pr, hipN: 55 * br, kneeN: 100 * br, hipF: 55 * br, kneeF: 100 * br });
@@ -1904,6 +1934,7 @@
         const hp = ease(kk / 1.2) * back, ex = ease((kk - 1.4) / 2) * back, stop = p.kernig ? 50 : 0;
         lying(this, g, { hipN: 90 * hp, kneeN: 90 * hp - (90 - stop) * ex });
       } else lying(this, g, {});
+      g.restore();
       note(g, '옆에서 본 누운 환자', 600, 590);
     },
     exam(q) {
