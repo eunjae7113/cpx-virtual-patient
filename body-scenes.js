@@ -801,9 +801,14 @@
   }
   // 설압자로 혀 누르기: 누르기 전엔 혀가 올라와 목 안쪽(편도·인두 뒷벽)을 가림 → 설압자가 들어와 혀를 눌러 내리면 보임.
   // clip = 입안 자리(사진 사각형 또는 코드 그림 타원). 혀·설압자는 코드 그림(사진 위에 겹침)
-  function tongueCover(e, g, clip) {
+  function tongueHint(e, g, k) { void e;
+    if (k < 0) { g.save(); g.fillStyle = 'rgba(8,14,16,.72)'; g.beginPath(); g.roundRect(380, 440, 440, 40, 10); g.fill(); txt(g, '혀가 올라와 목 안쪽이 가려져 있습니다 — 설압자로 눌러 보세요', 600, 466, { size: 15, c: '#e8d7a6', al: 'center' }); g.restore(); }
+  }
+  function tongueCover(e, g, clip, box) {
     // 처음 누른 때부터(진찰하기를 다시 눌러도 처음부터 다시 하지 않음). 다 누르면 혀는 아래에 눌린 채로 남음
     const k = e.tdep && e.tdep.p === e.p ? e.t - e.tdep.t0 : -1, press = k < 0 ? 0 : ease(k / 1.1);
+    const tg = box && entImg(e, 'throat_tongue');         // 실사 혀(ChatGPT): 첫 화면은 혀가 목 안쪽을 가리고, 설압자로 누르면 내려감
+    if (tg) { g.save(); clip(); g.clip(); g.drawImage(tg, box[0], box[1] + press * box[3] * 0.72, box[2], box[3]); g.restore(); tongueHint(e, g, k); return; }
     g.save(); clip(); g.clip();
     const top = 215 + press * 255, cx = 600;
     const gr = g.createLinearGradient(0, top, 0, top + 260); gr.addColorStop(0, '#d98886'); gr.addColorStop(1, '#b4605e');
@@ -824,7 +829,7 @@
       g.restore();
     }
     g.restore();
-    if (k < 0) { g.save(); g.fillStyle = 'rgba(8,14,16,.72)'; g.beginPath(); g.roundRect(380, 440, 440, 40, 10); g.fill(); txt(g, '혀가 올라와 목 안쪽이 가려져 있습니다 — 설압자로 눌러 보세요', 600, 466, { size: 15, c: '#e8d7a6', al: 'center' }); g.restore(); }
+    tongueHint(e, g, k);
   }
   // 설압자로 본 목 안 — 그림 파라미터를 그대로 말로(질환 이름 없이, 그림에 그린 것만)
   function throatFelt(p) {
@@ -851,7 +856,7 @@
       floor(g, 540);
       if (p.noexam) { face(this, g, 600, 280, 190, { drool: 1, open: 0.12, gy: 0.2 }); note(g, '앞으로 몸을 숙이고 앉아 있음 · 입을 벌려 보라고만 하고 설압자는 대지 않음', 600, 560); return; }
       const im = entImg(this, throatKey(p));
-      if (im) { const b = entDraw(g, im, p.bulge === 'R', '입안 뒤쪽(인두) · 아래 = 설압자'); tongueCover(this, g, () => { g.beginPath(); g.roundRect(b[0], b[1], b[2], b[3], 26); }); return; }   // 농양 사진은 환자 왼쪽 → 오른쪽이면 반전
+      if (im) { const b = entDraw(g, im, p.bulge === 'R', '입안 뒤쪽(인두) · 아래 = 설압자'); tongueCover(this, g, () => { g.beginPath(); g.roundRect(b[0], b[1], b[2], b[3], 26); }, b); return; }   // 농양 사진은 환자 왼쪽 → 오른쪽이면 반전
       const open = p.trismus ? 0.35 : 1;
       ell(g, 600, 300, 330, 250 * Math.max(open, 0.55), sk, LINE);
       ell(g, 600, 300, 290, 205 * open, mix(sk, '#b24a4a', 0.5));
@@ -1642,15 +1647,18 @@
   const MOV = { flex: [80, '앞으로 굽히기'], ext: [25, '뒤로 젖히기'], latR: [30, '오른쪽으로 옆 굽히기'], latL: [30, '왼쪽으로 옆 굽히기'], rotR: [40, '오른쪽으로 돌리기'], rotL: [40, '왼쪽으로 돌리기'] };
   // 실사 서 있는 옆모습(tools/genai_scenes.py layers stand): 배경판 위에 상체 조각을 고관절 둘레로 기울임. bend > 0 = 앞으로 굽힘(앞 = 화면 오른쪽)
   function standPhoto(e, g, bend) {
-    const P = BE.draw.scenePhoto(e, 'stand', 'plate'), U = BE.draw.scenePhoto(e, 'stand', 'upper');
+    const P = BE.draw.scenePhoto(e, 'stand', 'plate'), U = BE.draw.scenePhoto(e, 'stand', 'upper'), LW = BE.draw.scenePhoto(e, 'stand', 'lower');
     if (!P || !U || !P.marks.hip) return false;
     const m = P.marks, iw = P.img.naturalWidth, ih = P.img.naturalHeight, bh = 440 / (m.feet - m.top), bw = bh * iw / ih;
     const x0 = 250 - m.hip[0] * bw, y0 = 515 - m.feet * bh, hip = [x0 + m.hip[0] * bw, y0 + m.hip[1] * bh], uMax = Math.min(1, (560 - x0) / bw);
-    g.save(); g.beginPath(); g.rect(0, 0, 560, H); g.clip();
-    g.drawImage(P.img, 0, 0, iw * uMax, ih, x0, y0, bw * uMax, bh);
-    const fx = Math.min(560, x0 + bw * uMax), gr = g.createLinearGradient(fx - 90, 0, fx, 0);   // 오른쪽 끝을 배경색으로 녹임
-    gr.addColorStop(0, 'rgba(16,22,25,0)'); gr.addColorStop(1, 'rgba(16,22,25,1)'); g.fillStyle = gr; g.fillRect(fx - 90, y0, 92, bh);
-    g.restore();
+    if (LW) g.drawImage(LW.img, x0, y0, bw, bh);                // 아랫몸(오려 낸 조각) — 네모 배경판 없이 어두운 진찰 화면 위에
+    else {
+      g.save(); g.beginPath(); g.rect(0, 0, 560, H); g.clip();
+      g.drawImage(P.img, 0, 0, iw * uMax, ih, x0, y0, bw * uMax, bh);
+      const fx = Math.min(560, x0 + bw * uMax), gr = g.createLinearGradient(fx - 90, 0, fx, 0);   // 오른쪽 끝을 배경색으로 녹임
+      gr.addColorStop(0, 'rgba(16,22,25,0)'); gr.addColorStop(1, 'rgba(16,22,25,1)'); g.fillStyle = gr; g.fillRect(fx - 90, y0, 92, bh);
+      g.restore();
+    }
     g.save(); g.translate(hip[0], hip[1]); g.rotate(bend * Math.PI / 180); g.translate(-hip[0], -hip[1]); g.drawImage(U.img, x0, y0, bw, bh); g.restore();
     return true;
   }
