@@ -618,7 +618,7 @@
   P.legCam = function (v) {
     if (CLOSE[this.task]) return this.sitCam(v);
     const m = v.m, L = this.pose.L, top = 18, FLOOR = this.view === 'side' ? 530 : 556;
-    const si = (FLOOR + top) / (m.floor - m.top), camX = this.pose.pelvis.x;
+    const si = (FLOOR + top) / (m.floor - m.top), camX = this.task === 'romberg' || this.p.unable ? (this.pose0 || this.pose).pelvis.x : this.pose.pelvis.x;   // 서서 흔들리는 검사는 카메라 고정(흔들림이 보이게)
     if (this.view === 'side') {
       const sh = Math.hypot(m.knee[0] - m.ankle[0], m.knee[1] - m.ankle[1]), S = si * sh / L.sh;
       return { side: true, si, S, camX, floor: FLOOR + (m.floor - m.ankle[1]) * si * 0 , base: FLOOR - ((m.floor - m.ankle[1]) * si - L.ank * S) };
