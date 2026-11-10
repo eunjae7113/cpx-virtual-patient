@@ -168,7 +168,7 @@
     if (p.festinate && this.t < 1.2) rate *= 0.45;                       // 출발 머뭇거림
     this.phase += dt * rate;
     this.pose = this.solve(dt);
-    if (this.pose.pelvis.x > (this.view === 'side' ? 4.4 : 4.4)) { this.dist = 0; this.anchor = null; this.prints = []; this.fade = 1; }
+    if (this.pose.pelvis.x > (this.legSet() ? 8.8 : 4.4)) { this.dist = 0; this.anchor = null; this.prints = []; this.fade = 1; }
     this.fade = Math.max(0, this.fade - dt * 2.5);
   };
   P.legPhase = function (s) { return ((this.phase + (s === 'L' ? 0.5 : 0)) % 1 + 1) % 1; };
@@ -600,8 +600,75 @@
     }
     return this.view === 'side' ? [0, 0.2, -1] : [1, 0.2, 0];
   };
+  // ------------------------------------------------------------------ 걷기·서기 검사의 '다리만' 실사(tools/genai_scenes.py layers gait)
+  // 허리 아래 사진을 관절별 조각으로 나눠 두고, 엔진이 계산한 관절 위치대로 조각을 돌려 그림 → 질환별 걸음이 그대로. 카메라는 환자를 따라감
+  P.setLegPhotos = function (m) { this.legPh = m || {}; this.legIm = {}; };
+  P.legSet = function () {
+    if (this.useLegs === false || CLOSE[this.task] || !this.legPh || !this.pose) return null;
+    const v = this.view === 'side' ? 'side' : 'front', d = this.legPh[this.av]; if (!d || !d[v]) return null;
+    const key = this.av + v;
+    if (!this.legIm[key]) { const I = this.legIm[key] = {}; for (const n in d[v].img) { const im = new Image(); im.onload = () => this.draw(); im.src = d[v].img[n]; I[n] = im; } }
+    const I = this.legIm[key]; for (const n in I) if (!I[n].complete || !I[n].naturalWidth) return null;
+    return { m: d[v].marks, I };
+  };
+  // 다리 카메라: 사진 윗변이 화면 위로 나가게 배율을 정함. 옆 = 환자를 따라 평행 이동, 앞 = 환자 앞에서 같은 거리로 뒷걸음
+  P.legCam = function (v) {
+    const m = v.m, L = this.pose.L, top = 18, FLOOR = this.view === 'side' ? 530 : 556;
+    const si = (FLOOR + top) / (m.floor - m.top), camX = this.pose.pelvis.x;
+    if (this.view === 'side') {
+      const sh = Math.hypot(m.knee[0] - m.ankle[0], m.knee[1] - m.ankle[1]), S = si * sh / L.sh;
+      return { side: true, si, S, camX, floor: FLOOR + (m.floor - m.ankle[1]) * si * 0 , base: FLOOR - ((m.floor - m.ankle[1]) * si - L.ank * S) };
+    }
+    const sh = m.ankle.R[1] - m.knee.R[1], sc0 = si * sh / L.sh, k = 1.5, camH = 0.45, D = k * 1.07 * 760 / (camH * sc0), F = sc0 * D;
+    const zk = 1.5, hipK = (m.ankle.L[0] - m.ankle.R[0]) * si / (2 * L.hipW * sc0 * zk);   // 발 간격은 좀 넓혀(zk) 두 발이 겹치지 않게, 엉덩이 쪽은 사진의 다리 간격에 맞춤(hipK)
+    return { side: false, si, sc0, F, D, camX, camH, cy: FLOOR - camH * sc0 - ((m.floor - m.ankle.R[1]) * si - L.ank * sc0), k, zk, hipK };
+  };
+  // 실사 조각 그리기. 조각마다 사진의 두 점(a0→b0)이 화면의 두 점(a→b)에 오게 돌리고 길이만 맞춤(폭은 sw)
+  P.drawLegs = function (g, v, J) {
+    const lg = this._lg, m = v.m, I = v.I, pv = J.pv, W3 = (q) => this.project(pv.x + q[0], q[1], q[2]);
+    const seg = (im, a0, b0, a, b, sw, dim) => {
+      const t0 = Math.atan2(b0[1] - a0[1], b0[0] - a0[0]), t = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const sa = Math.hypot(b[0] - a[0], b[1] - a[1]) / Math.max(1, Math.hypot(b0[0] - a0[0], b0[1] - a0[1]));
+      g.save(); if (dim) g.filter = 'brightness(0.8)';
+      g.translate(a[0], a[1]); g.rotate(t); g.scale(sa, sw); g.rotate(-t0); g.translate(-a0[0], -a0[1]);
+      g.drawImage(im, 0, 0, m.W, m.H); g.restore();
+    };
+    if (lg.side) {
+      const leg = (s, dim) => {
+        const l = J.legs[s], H = W3(l.hip), K = W3(l.knee), A = W3(l.ankle), T = W3(l.toe), He = W3(l.heel);
+        const fw0 = [m.toe[0] - m.heel[0], m.toe[1] - m.heel[1]], fl0 = Math.hypot(...fw0), fw = [T[0] - He[0], T[1] - He[1]];     // 발: 뒤꿈치→발끝 방향만 돌림(크기 고정)
+        const ang = Math.atan2(fw[1], fw[0]) - Math.atan2(fw0[1], fw0[0]);
+        g.save(); if (dim) g.filter = 'brightness(0.8)'; g.translate(A[0], A[1]); g.rotate(ang); g.scale(lg.si, lg.si); g.translate(-m.ankle[0], -m.ankle[1]); g.drawImage(I.foot, 0, 0, m.W, m.H); g.restore(); void fl0;
+        seg(I.shank, m.knee, m.ankle, K, A, lg.si, dim);
+        seg(I.thigh, m.hip, m.knee, H, K, lg.si, dim);
+      };
+      leg('L', true); leg('R', false);                                      // 환자 오른쪽에서 봄: 오른다리가 앞
+      return;
+    }
+    // 앞에서: 먼 다리부터(발이 뒤에 있는 쪽). 반바지 윗부분은 깔개
+    const hc = W3([0, pv.y, pv.z]), cx0 = hc[0]; hc[0] = 600 + (hc[0] - 600) / lg.zk;   // 몸 좌우 흔들림은 실제 크기로
+    const hipM0 = [(m.hip.R[0] + m.hip.L[0]) / 2, m.hip.R[1]], tilt = pv.tilt * D2R, sw = (sc) => lg.si * sc / lg.sc0;
+    g.save(); g.translate(hc[0], hc[1]); g.rotate(tilt); g.scale(sw(hc[2]), sw(hc[2])); g.translate(-hipM0[0], -hipM0[1]); g.drawImage(I.pelvis, 0, 0, m.W, m.H); g.restore();
+    const leg = (s) => {
+      const l = J.legs[s], H = W3(l.hip), K = W3(l.knee), A = W3(l.ankle), T = W3(l.toe), He = W3(l.heel), k = sw(A[2]);
+      H[0] = hc[0] + (H[0] - cx0) * lg.hipK; K[0] = (H[0] + A[0]) / 2;
+      const pitch = Math.atan2(l.toe[1] - l.heel[1], Math.max(0.01, Math.hypot(l.toe[0] - l.heel[0], l.toe[2] - l.heel[2])));   // 발 앞뒤 기울기
+      const rot = clamp((T[0] - A[0]) / 90, -0.5, 0.5);                       // 발끝이 바깥을 향하면 살짝 돌림
+      g.save(); g.translate(A[0], A[1]); g.rotate(-rot); g.scale(k, k * (1 + 0.55 * Math.abs(Math.sin(pitch)))); g.translate(-m.ankle[s][0], -m.ankle[s][1]); g.drawImage(I['foot' + s], 0, 0, m.W, m.H); g.restore(); void He;
+      seg(I['shank' + s], m.knee[s], m.ankle[s], K, A, sw((K[2] + A[2]) / 2));
+      seg(I['thigh' + s], m.hip[s], m.knee[s], H, K, sw((H[2] + K[2]) / 2));
+    };
+    const near = J.legs.R.ankle[0] > J.legs.L.ankle[0] ? 'R' : 'L';
+    leg(near === 'R' ? 'L' : 'R'); leg(near);
+  };
+
   P.project = function (x, y, z) {               // 세계 좌표(m) → 화면
-    const Hh = AV[this.av].h;
+    const Hh = AV[this.av].h, lg = this._lg;
+    if (lg && !CLOSE[this.task]) {
+      if (lg.side) return [600 + (x - lg.camX) * lg.S, lg.base - y * lg.S - z * lg.S * 0.08, lg.S];
+      const sc = lg.F / Math.max(1.2, lg.D - (x - lg.camX));
+      return [600 + z * sc * lg.zk, lg.cy + (lg.camH - y) * sc, sc];
+    }
     if (CLOSE[this.task] && this.view !== 'side') {
       const c = this.frontCam(), sc = c.F / Hh * c.X / Math.max(0.15 * Hh, c.X - x);
       return [600 + z * sc, 230 - (y - c.Y) * sc, sc];
@@ -624,12 +691,20 @@
     const g = this.g, dpr = this.c.width / W;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.task === 'babinski') { this.drawFoot(g); return; }
+    const legs = this.legSet();
+    this._lg = legs ? this.legCam(legs) : null;
     this.drawRoom(g);
     this.drawPrints(g);
     // 3D 환자(실사 모델): 걷기·서기 검사에서 켜져 있으면 2D 마네킹 대신. 그림자는 2D 로
     const close = CLOSE[this.task];
     const g3 = this.use3D !== false && this.g3 && this.g3.ready && (!close || G3_CLOSE[this.task]) && this.pose;
-    if (g3) {
+    if (legs) {
+      const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, W3 = (q) => this.project(pv.x + q[0], 0, q[2]);
+      g.fillStyle = 'rgba(60,50,40,0.22)';
+      for (const s of ['L', 'R']) { const a = W3(J.legs[s].ankle), t = W3(J.legs[s].toe), lift = clamp(1 - Math.min(J.legs[s].heel[1], J.legs[s].toe[1]) * 5, 0.25, 1); g.globalAlpha = lift; g.beginPath(); g.ellipse((a[0] + t[0]) / 2, Math.max(a[1], t[1]) + 2, this.view === 'side' ? 118 : 62 * a[2] / this._lg.sc0, 10, 0, 0, 7); g.fill(); }
+      g.globalAlpha = 1;
+      this.drawLegs(g, legs, J);
+    } else if (g3) {
       const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, sh = this.project(pv.x, 0, pv.z), Hh = this.pose.H;
       if (!close) { g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill(); }
       if (close) this.drawBody(g, this.pose, false, 'pre');    // 발목반사 망치는 다리 뒤(아킬레스건) → 3D 환자보다 먼저
@@ -644,9 +719,10 @@
     }
     g.font = '12px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     g.fillStyle = 'rgba(40,50,55,0.75)'; g.textAlign = 'right'; g.fillText(this.view === 'side' ? (CLOSE[this.task] ? '오른쪽 앞에서 비스듬히 봄' : '옆에서 봄 · 환자 오른쪽이 보임') : '앞에서 봄 · 환자 오른쪽 = 화면 왼쪽', W - 14, 22);
-    if (this.useBg !== false && this.bgImg && this.bgImg[this.bgKey()]) {
+    if (legs || (this.useBg !== false && this.bgImg && this.bgImg[this.bgKey()])) {
+      const tag = legs ? 'AI 생성 이미지' : 'AI 생성 배경';
       g.font = '11px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,0.85)';
-      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 3; g.strokeText('AI 생성 배경', 12, H - 10); g.fillText('AI 생성 배경', 12, H - 10);
+      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 3; g.strokeText(tag, 12, H - 10); g.fillText(tag, 12, H - 10);
     }
     if (this.fade > 0) { g.fillStyle = `rgba(233,238,236,${this.fade})`; g.fillRect(0, 0, W, H); }
   };
@@ -657,6 +733,18 @@
   P.drawBg = function (g) {
     const im = this.useBg !== false && this.bgImg && this.bgImg[this.bgKey()];
     if (!im || !im.complete || !im.naturalWidth) return false;
+    const lg = this._lg;
+    if (lg && !CLOSE[this.task]) {
+      if (lg.side) {               // 옆: 사진을 다리 배율로 키워 바닥 높이를 맞추고, 환자를 따라 흘러감(좌우 반전으로 이어 붙임)
+        const k = lg.S / 225, w = W * k, h = H * k, y0 = lg.base - 16 - 505 * k, ofs = lg.camX * lg.S;
+        let i = Math.floor((ofs - 600) / w), x = i * w - ofs + 600;
+        for (; x < W; i++, x += w) { g.save(); if (i % 2) { g.translate(x + w, y0); g.scale(-1, 1); g.drawImage(im, 0, 0, w, h); } else g.drawImage(im, x, y0, w, h); g.restore(); }
+      } else {                     // 앞: 소실점이 다리 카메라의 눈높이에 오게
+        const k = lg.k, kk = k * (1 + 0.03 * Math.sin(lg.camX * 1.5));
+        g.drawImage(im, 600 - 600 * kk, lg.cy - 225 * kk, W * kk, H * kk);
+      }
+      return true;
+    }
     g.drawImage(im, 0, 0, W, H);
     return true;
   };
@@ -685,18 +773,19 @@
     }
     if (this.view === 'side') {
       if (!photo) {
-        const gw = g.createLinearGradient(0, 0, 0, 505); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d5dcda');
-        g.fillStyle = gw; g.fillRect(0, 0, W, 505);
-        g.fillStyle = '#c3ccc9'; g.fillRect(0, 300, W, 8);                                  // 손잡이
-        g.fillStyle = '#b7c1be'; g.fillRect(0, 488, W, 17);                                 // 걸레받이
-        const gf = g.createLinearGradient(0, 505, 0, H); gf.addColorStop(0, '#cfc6b8'); gf.addColorStop(1, '#bdb3a4');
-        g.fillStyle = gf; g.fillRect(0, 505, W, H - 505);
+        const fy = this._lg ? this._lg.base - 16 : 505;                                     // 바닥 높이(다리 카메라는 더 아래)
+        const gw = g.createLinearGradient(0, 0, 0, fy); gw.addColorStop(0, '#e6ebe9'); gw.addColorStop(1, '#d5dcda');
+        g.fillStyle = gw; g.fillRect(0, 0, W, fy);
+        if (!this._lg) { g.fillStyle = '#c3ccc9'; g.fillRect(0, 300, W, 8); }               // 손잡이
+        g.fillStyle = '#b7c1be'; g.fillRect(0, fy - 17, W, 17);                             // 걸레받이
+        const gf = g.createLinearGradient(0, fy, 0, H); gf.addColorStop(0, '#cfc6b8'); gf.addColorStop(1, '#bdb3a4');
+        g.fillStyle = gf; g.fillRect(0, fy, W, H - fy);
       }
       if (this.noBed) return;
       // 바닥 줄자(0.5 m 눈금)
       g.strokeStyle = 'rgba(70,60,50,0.45)'; g.lineWidth = 1; g.fillStyle = 'rgba(70,60,50,0.6)'; g.font = '11px "IBM Plex Mono", monospace'; g.textAlign = 'center';
       g.beginPath(); g.moveTo(0, 560.5); g.lineTo(W, 560.5); g.stroke();
-      for (let m = 0; m <= 5.5; m += 0.5) { const [x] = this.project(m, 0, 0); g.beginPath(); g.moveTo(x + 0.5, 553); g.lineTo(x + 0.5, m % 1 ? 560 : 567); g.stroke(); if (!(m % 1)) g.fillText(m + ' m', x, 580); }
+      for (let m = 0; m <= (this._lg ? 10 : 5.5); m += 0.5) { const [x] = this.project(m, 0, 0); g.beginPath(); g.moveTo(x + 0.5, 553); g.lineTo(x + 0.5, m % 1 ? 560 : 567); g.stroke(); if (!(m % 1)) g.fillText(m + ' m', x, 580); }
       return;
     }
     // 복도: 뒷벽(16 m 앞) · 양쪽 벽 · 바닥 타일 · 가운데 테이프. x = 7 - 거리
@@ -721,7 +810,7 @@
   };
 
   P.drawPrints = function (g) {
-    if (CLOSE[this.task]) return;
+    if (CLOSE[this.task] || (this._lg && !this._lg.side)) return;              // 다리 카메라 앞모습: 발자국은 안 그림
     for (const f of this.prints) {
       const age = clamp((this.t - f.t) / 9, 0, 1), al = 0.42 * (1 - age);
       if (al <= 0.01) continue;
