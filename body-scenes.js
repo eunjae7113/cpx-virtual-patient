@@ -407,14 +407,14 @@
       floor(g, 420); ell(g, 330, 300, 230, 110, '#cfd7da');
       let op = EYE0[lvl] == null ? 1 : EYE0[lvl];
       if (k < 5) {
-        if (!pain && ['alert', 'confused', 'drowsy'].includes(lvl)) op = 1;
+        if (!pain && lvl === 'drowsy') op = 0.3 + 0.7 * clamp((k - 0.6) / 0.5, 0, 1);   // 부르는 말을 듣고 나서 눈을 뜸
         if (pain && (lvl === 'drowsy' || lvl === 'confused' || lvl === 'alert')) op = 1;
         if (pain && lvl === 'stupor') op = k < 3.5 ? 0.5 : 0;
       }
-      if (op > 0.5 && this.t % 4 < 0.12) op = 0.05;
+      if (op > 0.5 && k >= 5 && this.t % 7 < 0.12) op = 0.05;   // 부르고 반응을 보는 5초 동안은 깜빡이지 않음(교수님 피드백)
       face(this, g, 330, 250, 140, { eR: op, eL: op, gx: lvl === 'confused' || lvl === 'drowsy' ? Math.sin(this.t * 0.8) * 0.8 : 0 });
       bodyTop(this, g, 860, pain ? p.motor : 'rest', pain ? k : 99);
-      if (!pain && k < 3) { rrect(g, 470, 90, 250, 54, 14, 'rgba(232,215,166,.92)'); txt(g, '○○ 씨! 눈 떠 보세요!', 595, 124, { size: 18, w: 600, c: '#1a2529', al: 'center' }); }
+      if (!pain && k < 3) { rrect(g, 470, 90, 250, 54, 14, 'rgba(232,215,166,.92)'); txt(g, EYE0[lvl] < 1 ? '○○ 씨! 눈 떠 보세요!' : '○○ 씨! 제 말 들리세요?', 595, 124, { size: 18, w: 600, c: '#1a2529', al: 'center' }); }
       if (pain && k < 3) { const x = 860 + Math.sin(k * 14) * 10; finger(g, x, 300, 1); note(g, '흉골 문지르기', 860, 215); }
     };
   }
