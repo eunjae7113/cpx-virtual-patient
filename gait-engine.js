@@ -108,6 +108,7 @@
     fnt: 'Finger to nose', hts: 'Heel to shin', ram: '빠른 교대운동', drift: 'Pronator drift',
     dtr_arm: '상지 심부건반사', dtr_leg: '하지 심부건반사', clonus: 'Ankle clonus', babinski: '바빈스키' };
   GaitEngine.CLOSE = CLOSE;
+  const SIT_LEGS = { hts: 1, dtr_leg: 1, clonus: 1 };   // 앉아서 하는 검사 중 다리만 쓰는 것 → 실사 다리
   const G3_CLOSE = { fnt: 1, hts: 1, ram: 1, drift: 1, dtr_arm: 1, dtr_leg: 1, clonus: 1 };   // 앉아서 하는 검사도 3D 환자로(바빈스키는 발 확대 그림이라 2D)
   const P = GaitEngine.prototype;
 
@@ -145,7 +146,7 @@
     this.stepTimes = []; this.lastPose = null; this.chor = [0, 1, 2, 3, 4, 5].map(() => this.rnd() * 6.28);
     this.fallen = 0; this.tStep = -9;
     this.ram = {}; for (const s of ['R', 'L']) this.ram[s] = { ph: 0, k: 0, per: 0.4, amp: 1, r0: 0, r1: Math.PI, off: [0, 0] };
-    this.pose = this.solve(0);
+    this.pose = this.pose0 = this.solve(0);
   };
   P.say = function (line) { this.sayQ.push(line); };
   P.takeSay = function () { return this.sayQ.shift() || null; };
@@ -544,7 +545,8 @@
   };
   P.drawFootPhoto = function (g, s, u, sv, resp, big) {
     if (this.useBg === false || !this.bgImg) return false;
-    const side = this.view === 'side', I = (k) => { const im = this.bgImg['bab_' + (side ? 'side' : 'sole') + '_' + k]; return im && im.complete && im.naturalWidth ? im : null; };
+    const suf = { y_m: '', m_m: '', s_m: '_om', e_m: '_om', y_f: '_yf', m_f: '_yf', s_f: '_of', e_f: '_of' }[this.av]; if (suf === undefined) return false;   // 외형에 맞는 발 사진(미성년자는 코드 그림)
+    const side = this.view === 'side', I = (k) => { const im = this.bgImg['bab_' + (side ? 'side' : 'sole') + '_' + k + suf]; return im && im.complete && im.naturalWidth ? im : null; };
     const base = I('neutral'); if (!base) return false;
     const mir = !side && s === 'L', X0 = 150, K = 0.75, C = (q) => [mir ? 1200 - (X0 + q[0] * K) : X0 + q[0] * K, q[1] * K];
     const img = (im, a) => { g.save(); g.globalAlpha = a; if (mir) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(im, X0, 0, 900, 600); g.restore(); };
@@ -604,15 +606,17 @@
   // 허리 아래 사진을 관절별 조각으로 나눠 두고, 엔진이 계산한 관절 위치대로 조각을 돌려 그림 → 질환별 걸음이 그대로. 카메라는 환자를 따라감
   P.setLegPhotos = function (m) { this.legPh = m || {}; this.legIm = {}; };
   P.legSet = function () {
-    if (this.useLegs === false || CLOSE[this.task] || !this.legPh || !this.pose) return null;
-    const v = this.view === 'side' ? 'side' : 'front', d = this.legPh[this.av]; if (!d || !d[v]) return null;
-    const key = this.av + v;
+    if (this.useLegs === false || !this.legPh || !this.pose || (CLOSE[this.task] && !SIT_LEGS[this.task])) return null;
+    const av = { t_m: 'y_m', t_f: 'y_f' }[this.av] || this.av;   // 청소년은 미성년자 사진을 만들지 않으므로 20대 다리 사진을 씀(다리만 보여 얼굴·나이 차이가 드러나지 않음). 소아는 코드 그림
+    const v = (CLOSE[this.task] ? 'sit_' : '') + (this.view === 'side' ? 'side' : 'front'), d = this.legPh[av]; if (!d || !d[v]) return null;
+    const key = av + v;      // 외형·시점별 조각 사진
     if (!this.legIm[key]) { const I = this.legIm[key] = {}; for (const n in d[v].img) { const im = new Image(); im.onload = () => this.draw(); im.src = d[v].img[n]; I[n] = im; } }
     const I = this.legIm[key]; for (const n in I) if (!I[n].complete || !I[n].naturalWidth) return null;
     return { m: d[v].marks, I };
   };
   // 다리 카메라: 사진 윗변이 화면 위로 나가게 배율을 정함. 옆 = 환자를 따라 평행 이동, 앞 = 환자 앞에서 같은 거리로 뒷걸음
   P.legCam = function (v) {
+    if (CLOSE[this.task]) return this.sitCam(v);
     const m = v.m, L = this.pose.L, top = 18, FLOOR = this.view === 'side' ? 530 : 556;
     const si = (FLOOR + top) / (m.floor - m.top), camX = this.pose.pelvis.x;
     if (this.view === 'side') {
@@ -622,6 +626,45 @@
     const sh = m.ankle.R[1] - m.knee.R[1], sc0 = si * sh / L.sh, k = 1.5, camH = 0.45, D = k * 1.07 * 760 / (camH * sc0), F = sc0 * D;
     const zk = 1.5, hipK = (m.ankle.L[0] - m.ankle.R[0]) * si / (2 * L.hipW * sc0 * zk);   // 발 간격은 좀 넓혀(zk) 두 발이 겹치지 않게, 엉덩이 쪽은 사진의 다리 간격에 맞춤(hipK)
     return { side: false, si, sc0, F, D, camX, camH, cy: FLOOR - camH * sc0 - ((m.floor - m.ankle.R[1]) * si - L.ank * sc0), k, zk, hipK };
+  };
+  // 앉은 다리 카메라: 사진이 화면에 그대로 오도록(가까운 다리의 무릎이 사진 자리에) 투영 값을 정함. t = 0 자세(pose0)를 기준으로
+  P.sitCam = function (v) {
+    const m = v.m, side = this.view === 'side', L = this.pose.L, Hh = AV[this.av].h, hts = this.task === 'hts', si = hts ? (side ? 0.92 : 0.62) : (side ? 1.1 : 0.72);   // heel to shin 은 무릎이 올라가므로 더 멀리서
+    const shp = Math.hypot(m.knee.R[0] - m.ankle.R[0], m.knee.R[1] - m.ankle.R[1]);
+    const ox0 = (W - m.W * si) / 2, oy0 = hts ? (side ? 170 : 170) - m.knee.R[1] * si : (side ? 6 : -2) - m.pad * si;   // 사진 → 화면
+    const S = si * shp / L.sh, J0 = this.drawBody(this.g, this.pose0, true), kR = J0.legs.R.knee, kL = J0.legs.L.knee;
+    const scrK = (s) => [m.knee[s][0] * si + ox0, m.knee[s][1] * si + oy0];
+    let lg;
+    if (side) {
+      const f = this.camPhi(), c = Math.cos(f), sn = Math.sin(f), h = (q) => q[0] * c + q[2] * sn, dep = (q) => -q[0] * sn + q[2] * c, tk = scrK('R');
+      lg = { close: 1, obl: 1, S, c, s: sn, si, ox: tk[0] - h(kR) * S, oy: tk[1] + (kR[1] + dep(kR) * 0.3) * S };
+    } else {
+      const fc = this.frontCam(), X = fc.X, tk = scrK('R'), tl = scrK('L'), zk = (tl[0] - tk[0]) / ((kL[2] - kR[2]) * S);
+      lg = { close: 1, obl: 0, S, X, Y: fc.Y, xk: kR[0], minD: 0.15 * Hh, zk, si, ox: tk[0] - kR[2] * S * zk, oy: tk[1] + (kR[1] - fc.Y) * S };
+    }
+    lg.j0 = J0;
+    return lg;
+  };
+  // 앉은 다리 조각 그리기: 정지 자세(j0)일 때 사진 그대로, 움직이면 그만큼 돌리고 늘림
+  P.drawSitLegs = function (g, v, J) {
+    const lg = this._lg, m = v.m, I = v.I, si = lg.si, W3 = (q) => this.project(q[0], q[1], q[2]), ang = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]), dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // 조각 변환: an0(사진) → an(화면). 정지 자세(r0→r1)에서는 사진 그대로, 움직이면 그만큼 돌리고 늘림. 정지 때 짧게 보이던 뼈(앞에서 본 허벅지)는 값이 튀므로 제한
+    const xf = (an0, b0, an, b, r0, r1, lim) => {
+      const t0 = ang(an0, b0), dl = clamp(Math.atan2(Math.sin(ang(an, b) - ang(r0, r1)), Math.cos(ang(an, b) - ang(r0, r1))), -lim[2], lim[2]), t = t0 + dl, sa = si * clamp(dist(an, b) / Math.max(1, dist(r0, r1)), lim[0], lim[1]);
+      const c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t), s1 = Math.sin(t);
+      return { an, an0, t, t0, sa, map: (p) => { const dx = p[0] - an0[0], dy = p[1] - an0[1], u = (dx * c0 + dy * s0) * sa, v = (-dx * s0 + dy * c0) * si; return [an[0] + u * c1 - v * s1, an[1] + u * s1 + v * c1]; } };
+    };
+    const put = (im, x, dim) => { g.save(); if (dim) g.filter = 'brightness(0.84)'; g.translate(x.an[0], x.an[1]); g.rotate(x.t); g.scale(x.sa, si); g.rotate(-x.t0); g.translate(-x.an0[0], -x.an0[1]); g.drawImage(im, 0, 0, m.W, m.H); g.restore(); };
+    const leg = (s, dim) => {
+      const l = J.legs[s], l0 = lg.j0.legs[s], H = W3(l.hip), K = W3(l.knee), A = W3(l.ankle), T = W3(l.toe), H0 = W3(l0.hip), K0 = W3(l0.knee), A0 = W3(l0.ankle), T0 = W3(l0.toe);
+      const pk = m.knee[s], pa = m.ankle[s], pt = m.toe[s], ph = [pk[0] + (H0[0] - K0[0]) / si, pk[1] + (H0[1] - K0[1]) / si];
+      const xs = xf(pk, pa, K, A, K0, A0, [0.6, 1.2, 1.4]), Ad = xs.map(pa);                   // 발은 종아리 조각의 발목 자리에 붙임(사진과 엔진의 비율 차이로 틈이 안 생기게)
+      put(I['foot' + s], xf(pa, pt, Ad, [Ad[0] + T[0] - A[0], Ad[1] + T[1] - A[1]], A0, T0, [0.75, 1.25, 1.2]), dim);
+      put(I['shank' + s], xs, dim);
+      put(I['thigh' + s], xf(pk, ph, K, H, K0, H0, [0.75, 1.25, 0.55]), dim);
+    };
+    if (lg.obl) { leg('L', true); leg('R', false); }                         // 환자 오른쪽 앞에서 봄: 오른다리가 가까움
+    else { const up = J.legs.R.knee[1] > J.legs.L.knee[1] + 0.005 ? 'R' : J.legs.L.knee[1] > J.legs.R.knee[1] + 0.005 ? 'L' : null; if (up) { leg(up === 'R' ? 'L' : 'R'); leg(up); } else { leg('L'); leg('R'); } }
   };
   // 실사 조각 그리기. 조각마다 사진의 두 점(a0→b0)이 화면의 두 점(a→b)에 오게 돌리고 길이만 맞춤(폭은 sw)
   P.drawLegs = function (g, v, J) {
@@ -664,6 +707,10 @@
 
   P.project = function (x, y, z) {               // 세계 좌표(m) → 화면
     const Hh = AV[this.av].h, lg = this._lg;
+    if (lg && lg.close) {
+      if (lg.obl) { const h = x * lg.c + z * lg.s, dep = -x * lg.s + z * lg.c; return [lg.ox + h * lg.S, lg.oy - (y + dep * 0.3) * lg.S, lg.S]; }
+      const sc = lg.S * (lg.X - lg.xk) / Math.max(lg.minD, lg.X - x); return [lg.ox + z * sc * lg.zk, lg.oy - (y - lg.Y) * sc, sc];
+    }
     if (lg && !CLOSE[this.task]) {
       if (lg.side) return [600 + (x - lg.camX) * lg.S, lg.base - y * lg.S - z * lg.S * 0.08, lg.S];
       const sc = lg.F / Math.max(1.2, lg.D - (x - lg.camX));
@@ -697,8 +744,13 @@
     this.drawPrints(g);
     // 3D 환자(실사 모델): 걷기·서기 검사에서 켜져 있으면 2D 마네킹 대신. 그림자는 2D 로
     const close = CLOSE[this.task];
-    const g3 = this.use3D !== false && this.g3 && this.g3.ready && (!close || G3_CLOSE[this.task]) && this.pose;
-    if (legs) {
+    const g3 = !AV[this.av].child && this.use3D !== false && this.g3 && this.g3.ready && (!close || G3_CLOSE[this.task]) && this.pose;
+    if (legs && close) {
+      const J = this.drawBody(g, this.pose, true);
+      this.drawBody(g, this.pose, false, 'pre');
+      this.drawSitLegs(g, legs, J);
+      this.drawBody(g, this.pose, false, 'post');
+    } else if (legs) {
       const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, W3 = (q) => this.project(pv.x + q[0], 0, q[2]);
       g.fillStyle = 'rgba(60,50,40,0.22)';
       for (const s of ['L', 'R']) { const a = W3(J.legs[s].ankle), t = W3(J.legs[s].toe), lift = clamp(1 - Math.min(J.legs[s].heel[1], J.legs[s].toe[1]) * 5, 0.25, 1); g.globalAlpha = lift; g.beginPath(); g.ellipse((a[0] + t[0]) / 2, Math.max(a[1], t[1]) + 2, this.view === 'side' ? 118 : 62 * a[2] / this._lg.sc0, 10, 0, 0, 7); g.fill(); }
@@ -759,7 +811,7 @@
         const fx = this.view === 'side' ? 3 : 0.75 * Hh;                                                 // 원근(앞)일 때 카메라 뒤는 그리지 않음
         poly([[-3, 0, -3], [fx, 0, -3], [fx, 0, 3], [-3, 0, 3]], '#cbc2b4');                                 // 바닥
       }
-      if (this.noBed) return;                                                                            // 실사 배경 기준 그림용
+      if (this.noBed || (this._lg && this._lg.close && this.bedPhoto)) return;                          // 실사 배경 기준 그림용 / 앉은 다리: 진찰대까지 사진
       // 진찰대: 그림자 · 다리 · 몸체 · 매트리스(흰 시트)
       const x0 = -0.3 * Hh, x1 = 0.16 * Hh, z0 = -0.24 * Hh, z1 = 0.24 * Hh, mt = 0.05 * Hh, bt = top - mt;
       poly([[x0 - 0.03 * Hh, 0, z0 - 0.03 * Hh], [x1 + 0.06 * Hh, 0, z0 - 0.03 * Hh], [x1 + 0.06 * Hh, 0, z1 + 0.03 * Hh], [x0 - 0.03 * Hh, 0, z1 + 0.03 * Hh]], 'rgba(40,35,30,0.18)');

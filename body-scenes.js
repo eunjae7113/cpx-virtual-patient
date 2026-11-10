@@ -524,8 +524,10 @@
       if (p.lac === k) { g.strokeStyle = '#9b2a2a'; g.lineWidth = 4; g.beginPath(); g.moveTo(430 + d * 40, 170); g.lineTo(430 + d * 110, 155); g.stroke(); }
     }
     inset(g, 930, 190, 120, '머리카락·두피 확대');
-    g.save(); g.beginPath(); g.arc(930, 190, 118, 0, 7); g.clip(); g.fillStyle = mix(e.skin(), '#f0e0d0', 0.3); g.fillRect(800, 60, 260, 260);
-    g.strokeStyle = e.look().hair; g.lineWidth = 3; for (let i = 0; i < 14; i++) { const x = 820 + i * 17; g.beginPath(); g.moveTo(x, 320); g.quadraticCurveTo(x + 20, 190, x - 5, 60); g.stroke(); }
+    g.save(); g.beginPath(); g.arc(930, 190, 118, 0, 7); g.clip();
+    const sc = scenePhoto(e, 'scalp', 'top');               // 실사 두피(ChatGPT, 성인 8외형). 없으면 코드 그림
+    if (sc) g.drawImage(sc.img, 810, 70, 240, 240);
+    else { g.fillStyle = mix(e.skin(), '#f0e0d0', 0.3); g.fillRect(800, 60, 260, 260); g.strokeStyle = e.look().hair; g.lineWidth = 3; for (let i = 0; i < 14; i++) { const x = 820 + i * 17; g.beginPath(); g.moveTo(x, 320); g.quadraticCurveTo(x + 20, 190, x - 5, 60); g.stroke(); } }
     if (p.lice) { for (let i = 0; i < 16; i++) { const x = 825 + rnd() * 230, y = 90 + rnd() * 200; ell(g, x, y, 5, 3, '#ece6d6', 'rgba(0,0,0,.3)', 1); } }
     if (p.scratch) { g.strokeStyle = 'rgba(170,40,40,.7)'; g.lineWidth = 2; for (let i = 0; i < 5; i++) { const x = 850 + rnd() * 150, y = 120 + rnd() * 150; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 30, y + 22); g.stroke(); } }
     g.restore();
@@ -1275,6 +1277,12 @@
       const p = this.p; abdBody(this, g, p);
       ell(g, 1050, 330, 110, 70, '#1a2529', 'rgba(150,200,190,.35)'); note(g, '옆에서 본 배 높이', 1050, 420);
       const h = 18 + (p.dist || 0) * 28 + (p.preg || 0) * 38 - (p.scaphoid || 0) * 16;
+      const lp = BE.draw.scenePhoto(this, 'lying', 'plate'), lm = lp && lp.marks;
+      if (lm && lm.hip) {                                      // 실사: 누운 옆모습 사진의 몸통 부분을 잘라 넣고, 배 높이는 세로로 늘려 표현
+        const iw = lp.img.naturalWidth, ih = lp.img.naturalHeight, k = (h + 40) / 58, sw = 0.36 * iw, sh = 0.24 * ih, sx = (lm.hip[0] - 0.34) * iw, sy = (lm.hip[1] - 0.18) * ih, dh = 118 * k;
+        g.save(); g.beginPath(); g.ellipse(1050, 330, 108, 68, 0, 0, 7); g.clip(); g.drawImage(lp.img, sx, sy, sw, sh, 945, 380 - dh, 212, dh); g.restore();
+        return;
+      }
       g.fillStyle = this.skin(); g.beginPath(); g.moveTo(960, 350); g.quadraticCurveTo(1050, 350 - h * 2, 1140, 350); g.closePath(); g.fill(); g.strokeStyle = LINE; g.stroke();
       g.strokeStyle = 'rgba(150,200,190,.4)'; g.beginPath(); g.moveTo(950, 350); g.lineTo(1150, 350); g.stroke();
     },
@@ -1611,6 +1619,13 @@
       const p = this.p; backView(this, g, p.curve === 'list_R' ? 4 : 0);
       if (p.ulcer) { const uy = levels(this).y(455); ell(g, CX, uy, 34, 24, '#8a2a3a', 'rgba(0,0,0,.3)'); ell(g, CX, uy, 16, 10, '#d8c8a0'); }
       ell(g, 1040, 300, 100, 140, '#1a2529', 'rgba(150,200,190,.35)'); note(g, '옆에서 본 등', 1040, 460);
+      const su = BE.draw.scenePhoto(this, 'stand', 'upper'), spm = BE.draw.scenePhoto(this, 'stand', 'plate');
+      if (su && spm && spm.marks.hip) {                         // 실사: 서 있는 옆모습 상체. 등이 굽은 소견은 상체를 앞으로 기울여 표현
+        const m = spm.marks, iw = su.img.naturalWidth, ih = su.img.naturalHeight, bh = 360, bw = bh * iw / ih / m.hip[1] * 0.86, ang = (p.curve === 'kyphosis' ? 13 : p.curve === 'flat' ? -3 : 0) * Math.PI / 180, ox = 1040 - m.hip[0] * bw, oy = 425 - m.hip[1] * bh;
+        g.save(); g.beginPath(); g.ellipse(1040, 300, 98, 138, 0, 0, 7); g.clip(); g.fillStyle = '#c9cfd0'; g.fillRect(930, 150, 220, 300);
+        g.translate(1040, 425); g.rotate(ang); g.translate(-1040, -425); g.drawImage(su.img, ox, oy, bw, bh); g.restore();
+        return;
+      }
       const k = p.curve === 'kyphosis' ? 40 : 15, l = p.curve === 'flat' ? 0 : 18;
       g.strokeStyle = this.skin(); g.lineWidth = 14; g.lineCap = 'round'; g.beginPath(); g.moveTo(1045, 180); g.bezierCurveTo(1045 + k, 250, 1045 + k * 0.4, 330, 1040 - l, 370); g.quadraticCurveTo(1035 - l * 0.6, 400, 1045, 425); g.stroke();
       ell(g, 1030 - (p.curve === 'kyphosis' ? 10 : 0), 168, 22, 22, this.look().hair);
