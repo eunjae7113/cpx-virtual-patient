@@ -532,6 +532,8 @@
     if (p.scratch) { g.strokeStyle = 'rgba(170,40,40,.7)'; g.lineWidth = 2; for (let i = 0; i < 5; i++) { const x = 850 + rnd() * 150, y = 120 + rnd() * 150; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 30, y + 22); g.stroke(); } }
     g.restore();
     inset(g, 930, 450, 80, '위에서 본 머리 모양');
+    const crown = scenePhoto(e, 'scalp', 'crown');           // 실사(위에서 본 머리). 머리가 큰 소견·납작한 소견은 크기를 바꿔 표현
+    if (crown) { const sw = 152 * big * (p.flat ? 1.08 : 1), sh = 152 * big * (p.flat ? 0.84 : 1); g.save(); g.beginPath(); g.arc(930, 450, 78, 0, 7); g.clip(); g.fillStyle = '#c9cfd0'; g.fillRect(850, 370, 160, 160); g.drawImage(crown.img, 930 - sw / 2, 450 - sh / 2, sw, sh); g.restore(); note(g, '앞', 930, 380); return; }
     g.fillStyle = e.look().hair; g.beginPath(); if (p.flat) { g.moveTo(870, 420); g.quadraticCurveTo(930, 340, 990, 420); g.lineTo(985, 490); g.lineTo(875, 490); g.closePath(); } else g.ellipse(930, 452, 52 * big, 64 * big, 0, 0, 7); g.fill();
     note(g, '앞', 930, 380);
   }

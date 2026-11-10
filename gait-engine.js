@@ -744,7 +744,8 @@
     this.drawPrints(g);
     // 3D 환자(실사 모델): 걷기·서기 검사에서 켜져 있으면 2D 마네킹 대신. 그림자는 2D 로
     const close = CLOSE[this.task];
-    const g3 = !AV[this.av].child && this.use3D !== false && this.g3 && this.g3.ready && (!close || G3_CLOSE[this.task]) && this.pose;
+    const g3m = /_f$/.test(this.av) && this.g3f && this.g3f.ready ? this.g3f : this.g3;        // 여성 케이스는 여성 3D
+    const g3 = !AV[this.av].child && this.use3D !== false && g3m && g3m.ready && (!close || G3_CLOSE[this.task]) && this.pose;
     if (legs && close) {
       const J = this.drawBody(g, this.pose, true);
       this.drawBody(g, this.pose, false, 'pre');
@@ -760,7 +761,7 @@
       const J = this.drawBody(g, this.pose, true), pv = this.pose.pelvis, sh = this.project(pv.x, 0, pv.z), Hh = this.pose.H;
       if (!close) { g.fillStyle = 'rgba(60,50,40,0.2)'; g.beginPath(); g.ellipse(sh[0], this.view === 'side' ? 507 : sh[1] + 2, 0.22 * Hh * sh[2], 0.03 * Hh * sh[2] + 3, 0, 0, 7); g.fill(); }
       if (close) this.drawBody(g, this.pose, false, 'pre');    // 발목반사 망치는 다리 뒤(아킬레스건) → 3D 환자보다 먼저
-      const cv = this.g3.render(J, this.view, Hh, AV[this.av].hair, close ? this.closeCam() : null);
+      const cv = g3m.render(J, this.view, Hh, AV[this.av].hair, close ? this.closeCam() : null);
       if (cv) g.drawImage(cv, 0, 0, W, H);
       if (close) this.drawBody(g, this.pose, false, 'post');   // 검사자 손가락·손·망치는 3D 환자 위에 2D 로
     } else this.drawBody(g, this.pose);

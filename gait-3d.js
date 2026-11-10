@@ -9,9 +9,9 @@
   const W = 1200, H = 600, PR = 1.5;
   const V = (p, ox) => new THREE.Vector3(p[0] + (ox || 0), p[1], -p[2]);
 
-  function Gait3D() {
-    this.ready = false; this.hairMats = [];
-    if (!window.THREE || !THREE.GLTFLoader || !window.GAIT3D_MODEL) return;
+  function Gait3D(model) {
+    this.ready = false; this.hairMats = []; this.M = model || window.GAIT3D_MODEL;
+    if (!window.THREE || !THREE.GLTFLoader || !this.M) return;
     const r = this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
     r.setPixelRatio(PR); r.setSize(W, H, false); r.outputEncoding = THREE.sRGBEncoding;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
@@ -29,7 +29,7 @@
   const P = Gait3D.prototype;
 
   P.load = function () {
-    const M = window.GAIT3D_MODEL, L = new THREE.GLTFLoader();
+    const M = this.M, L = new THREE.GLTFLoader();
     L.parse(JSON.stringify(M.body), '', (gl) => {
       const root = this.root = new THREE.Group(), model = this.model = gl.scene;
       model.rotation.y = Math.PI / 2;                                       // 모델은 +z 를 봄 → 환자가 +x 를 보게
@@ -40,7 +40,7 @@
       // 슈퍼히어로 체형 → 보통 체형 쪽으로: 어깨(쇄골) 좁게, 가슴 폭 조금 줄임
       for (const n of ['clavicle_l', 'clavicle_r']) B[n].scale.set(1, 0.86, 1);
       B.spine_03.scale.set(0.92, 1, 0.94);
-      model.traverse((o) => { if (o.isMesh && o.material && o.material.name === 'MI_Hair_1') this.hairMats.push(o.material); });
+      model.traverse((o) => { if (o.isMesh && o.material && /^MI_Hair/.test(o.material.name)) this.hairMats.push(o.material); });
       root.updateMatrixWorld(true);
       // 모델 다리 길이(넓적다리+정강이) → 2D 엔진 길이에 맞춰 크기 조절할 때 씀
       const wp = (n) => B[n].getWorldPosition(new THREE.Vector3());
