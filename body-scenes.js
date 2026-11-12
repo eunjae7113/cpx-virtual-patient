@@ -384,8 +384,26 @@
   BE.draw.limbPhoto = limbPhoto; BE.draw.limbBox = limbBox; BE.draw.swell = swell; BE.draw.tintSpot = tintSpot;
 
   // ================================================================ 의식
+  const BODY_X = 880;
   const EYE0 = { alert: 1, confused: 1, drowsy: 0.3, stupor: 0, coma: 0 };
+  // 실사(tools/genai_scenes.py 'bed', 성인 8외형): 누운 환자를 위에서 본 상체. 자세 사진(rest 와 같은 구도, 오른팔만 다름)을 반응 정도만큼 겹침
+  const BED = { S: 420, y0: 95, ster: 0.25 };   // 사진 크기·위치, 흉골(문지르는 곳) 높이 비율
+  function bodyTopPhoto(e, g, cx, motor, k) {
+    const R = BE.draw.scenePhoto(e, 'bed', 'rest'); if (!R) return null;
+    const M = { obey: 'obey', localize: 'localize', withdraw: 'withdraw' }[motor], P = M && BE.draw.scenePhoto(e, 'bed', M);
+    const S = BED.S, x0 = cx - S / 2, y0 = BED.y0;
+    if (g) {
+      g.save(); g.beginPath(); g.roundRect(x0, y0, S, S, 20); g.clip();
+      g.drawImage(R.img, x0, y0, S, S);
+      const pr = clamp(k < 4 ? (k - 0.3) / 0.5 : (5 - k), 0, 1);   // 문지른 뒤 잠깐 있다가 팔이 움직이고, 4초 뒤 원래대로
+      if (P && pr > 0) { g.globalAlpha = ease(pr); g.drawImage(P.img, x0, y0, S, S); }
+      g.restore();
+      txt(g, '누운 환자를 위에서 본 모습', cx, y0 + S + 22, { size: 13, c: '#7f918d', al: 'center' });
+    }
+    return { x: cx, y: y0 + S * BED.ster };
+  }
   function bodyTop(e, g, cx, motor, k) {
+    if (bodyTopPhoto(e, g, cx, motor, k)) return;
     const sk = e.skin();
     rrect(g, cx - 80, 230, 160, 230, 30, '#5f7f9a', LINE); txt(g, '몸(위에서 본 모습)', cx, 490, { size: 13, c: '#7f918d', al: 'center' });
     const rest = (d) => ({ e: [cx + d * 100, 340], h: [cx + d * 104, 430] });
@@ -404,7 +422,7 @@
   function locDraw(pain) {
     return function (g) {
       const p = this.p, lvl = p.lvl || 'alert', k = this.since();
-      floor(g, 420); ell(g, 330, 300, 230, 110, '#cfd7da');
+      floor(g, 420); if (!facePhoto(this)) ell(g, 330, 300, 230, 110, '#cfd7da');   // 베개(코드 얼굴일 때만 — 사진 얼굴 뒤에서는 회색 타원으로만 보였음)
       let op = EYE0[lvl] == null ? 1 : EYE0[lvl];
       if (k < 5) {
         if (!pain && lvl === 'drowsy') op = 0.3 + 0.7 * clamp((k - 0.6) / 0.5, 0, 1);   // 부르는 말을 듣고 나서 눈을 뜸
@@ -413,15 +431,16 @@
       }
       if (op > 0.5 && k >= 5 && this.t % 7 < 0.12) op = 0.05;   // 부르고 반응을 보는 5초 동안은 깜빡이지 않음(교수님 피드백)
       face(this, g, 330, 250, 140, { eR: op, eL: op, gx: lvl === 'confused' || lvl === 'drowsy' ? Math.sin(this.t * 0.8) * 0.8 : 0 });
-      bodyTop(this, g, 860, pain ? p.motor : 'rest', pain ? k : 99);
+      bodyTop(this, g, BODY_X, pain ? p.motor : 'rest', pain ? k : 99);
+      const st = bodyTopPhoto(this, null, BODY_X) || { x: BODY_X, y: 300 };   // 흉골 문지르는 곳
       if (!pain && k < 3) { rrect(g, 470, 90, 250, 54, 14, 'rgba(232,215,166,.92)'); txt(g, EYE0[lvl] < 1 ? '○○ 씨! 눈 떠 보세요!' : '○○ 씨! 제 말 들리세요?', 595, 124, { size: 18, w: 600, c: '#1a2529', al: 'center' }); }
-      if (pain && k < 3) { const x = 860 + Math.sin(k * 14) * 10; finger(g, x, 300, 1); note(g, '흉골 문지르기', 860, 215); }
+      if (pain && k < 3) { const x = st.x + Math.sin(k * 14) * 10; finger(g, x, st.y, 1); note(g, '흉골 문지르기', st.x, st.y > 250 ? st.y - 85 : BED.y0 - 18); }
     };
   }
   const LOC_SAY = { confused: '아! 왜 그래요… 여기가 어디예요?', drowsy: '으… 아파요…', stupor: '으으…', coma: '' };
   S.loc_call = { pts() { return [{ k: 'call', x: 330, y: 120, n: '이름을 크게 불러 보기' }]; }, draw: locDraw(false), exam() { this.act = { k: 'act', t0: this.t }; return {}; }, auto() { return {}; }, hint: '이마 위 동그라미를 누르거나 진찰하기 — 이름을 불러 봅니다' };
   S.loc_pain = {
-    pts() { return [{ k: 'rub', x: 860, y: 300, n: '흉골 문지르기(통증 자극)' }]; }, draw: locDraw(true),
+    pts() { const st = bodyTopPhoto(this, null, BODY_X) || { x: BODY_X, y: 300 }; return [{ k: 'rub', x: st.x, y: st.y, n: '흉골 문지르기(통증 자극)' }]; }, draw: locDraw(true),
     exam() { this.act = { k: 'act', t0: this.t }; return { say: LOC_SAY[this.p.lvl] || '' }; },
     auto() { return { say: LOC_SAY[this.p.lvl] || '' }; }, hint: '가슴 동그라미를 누르면 통증 자극을 줍니다',
   };
