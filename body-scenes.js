@@ -1912,6 +1912,7 @@
   const MUS_L = { hip_flex: '고관절 굽히기(허벅지 들기)', knee_ext: '무릎 펴기', ankle_df: '발목 위로 젖히기', ankle_pf: '발목 아래로 누르기', ehl: '엄지발가락 위로 젖히기', evert: '발 바깥으로 돌리기' };
   const DESC = { 5: '검사자가 세게 눌러도 끝까지 버팀', 4: '저항을 어느 정도 이기지만 세게 누르면 밀림', 3: '중력을 이기고 들어 올리지만 조금만 눌러도 밀림', 2: '중력이 없는 옆 방향으로만 움직임', 1: '근육이 움찔하는 것만 보이고 관절은 움직이지 않음', 0: '움직임도 근육 수축도 없음' };
   function grade(p, s, m) { const v = p[s] || {}; return v.all != null ? v.all : v[m] != null ? v[m] : 5; }
+  const HOOV = { x: 775, y: 172, s: 0.3 };   // 누운 사진(1200 폭 좌표)을 오른쪽 작은 칸에 넣는 위치·배율
   function powPts(e, legs) {
     const u = 5.2, cx = 300, top = 40, o = [], PF = photoFig(e), P = PF && PF.J;
     const at = (key, fx, fy, dx = 0, dy = 0) => P ? { x: P[key][0] + dx, y: P[key][1] + dy } : { x: fx, y: fy };   // 실사 몸이면 사진 위 지점
@@ -1926,7 +1927,7 @@
       }
     }
     for (const q of o) { const [s, m] = q.k.split('.'); q.n = `${SN(s)} ${(legs ? MUS_L : MUS_A)[m]} — 버티게 하기`; }
-    if (legs) o.push({ k: 'hoover', x: P ? 940 : 600, y: P ? 300 : 520, n: 'Hoover 검사 — 누워서 한쪽 다리를 들 때 반대쪽 발뒤꿈치 힘' });
+    if (legs) o.push({ k: 'hoover', x: P ? HOOV.x + 990 * HOOV.s : 600, y: P ? HOOV.y + 310 * HOOV.s : 520, n: 'Hoover 검사 — 누워서 한쪽 다리를 들 때 반대쪽 발뒤꿈치 힘' });
     return o;
   }
   function powDraw(g, legs) {
@@ -1935,7 +1936,12 @@
     const PL = !legs && palmLay(this);
     if (PL) PL.draw(g);
     else if (!legs) for (const [k, d] of SIDES) { hand(this, g, 820 + (d < 0 ? 0 : 240), 200, 110, d, {}); note(g, k === 'R' ? '오른손' : '왼손', 820 + (d < 0 ? 0 : 240), 300); }
-    else if (PF) rrect(g, 810, 260, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
+    else if (PF) {   // Hoover 검사 자리: 빈 네모 대신 누운 환자 실사(뇌막 자극·SLR 과 같은 사진)를 작게
+      g.save(); g.beginPath(); g.roundRect(800, 205, 300, 125, 12); g.clip(); g.fillStyle = '#1a2529'; g.fillRect(800, 205, 300, 125);
+      g.translate(HOOV.x, HOOV.y); g.scale(HOOV.s, HOOV.s); lying(this, g, {}); g.restore();
+      g.strokeStyle = 'rgba(150,200,190,.3)'; g.lineWidth = 1; g.beginPath(); g.roundRect(800, 205, 300, 125, 12); g.stroke();
+      note(g, 'Hoover 검사(누운 자세)', 950, 350);
+    }
     else rrect(g, 470, 480, 260, 80, 12, 'rgba(26,37,41,.9)', 'rgba(150,200,190,.3)');
     if (this.sel && this.sel.k !== 'hoover') {
       const [s, m] = this.sel.k.split('.'), gr = grade(this.p, s, m), kk = this.since(), x = clamp(this.sel.x + (s === 'R' ? -150 : 30), 8, W - 130), y = this.sel.y - 30;
