@@ -1714,13 +1714,13 @@
 
   // ================================================================ SLR — 누운 다리를 올리다 아파하는 각도에서 멈춤
   S.slr = {
-    pts() { return [{ k: 'R', x: 760, y: 370, n: '오른쪽 다리 곧게 들어 올리기' }, { k: 'L', x: 880, y: 370, n: '왼쪽 다리 곧게 들어 올리기' }]; },
+    pts() { return [{ k: 'R', x: 780, y: 358, n: '오른쪽 다리 곧게 들어 올리기' }, { k: 'L', x: 915, y: 358, n: '왼쪽 다리 곧게 들어 올리기' }]; },
     hint: '동그라미를 누르면 무릎을 편 채 다리를 천천히 올립니다',
     draw(g) {
       floor(g, 560);
       const k = this.act ? this.act.k : null, v = k ? this.p[k] || 0 : 0, tgt = v > 0 ? v : 80, kk = this.since();
       const ang = k ? tgt * ease(kk / 2.6) * (kk > 6 ? Math.max(0, 1 - (kk - 6) / 1.5) : 1) : 0;
-      g.save(); g.translate(120, 130); g.scale(0.8, 0.8);
+      g.save(); g.translate(60, 88); g.scale(0.9, 0.9);   // 80° 든 다리 끝까지 화면 안에 들어오는 가장 큰 배율
       const L = lying(this, g, { hipN: k === 'R' ? ang : 0, hipF: k === 'L' ? ang : 0 });
       if (k) { protractor(g, L.hip[0], L.hip[1], 120, ang, 0); if (k === 'R') finger(g, L.an[0], L.an[1] + 20, 1); }
       g.restore();
@@ -1985,14 +1985,14 @@
   // ================================================================ 뇌막 자극 — 목 굽히기(Brudzinski)·Kernig
   S.mening = {
     pts() {
-      if (BE.draw.scenePhoto(this, 'lying', 'plate')) return [{ k: 'neck', x: 290, y: 395, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 713, y: 405, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }];   // 실사: 0.8배로 줄여 그림(아래 draw)
+      if (BE.draw.scenePhoto(this, 'lying', 'plate')) return [{ k: 'neck', x: 251, y: 386, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 727, y: 397, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }];   // 실사: 0.9배(아래 draw)
       return [{ k: 'neck', x: 235, y: 290, n: '머리를 들어 턱을 가슴 쪽으로 굽히기' }, { k: 'kernig', x: 820, y: 300, n: 'Kernig — 고관절 90°로 굽힌 채 무릎 펴기' }];
     },
     hint: '머리 동그라미 = 목 굽히기, 다리 동그라미 = Kernig 검사',
     draw(g) {
       floor(g, 560); const p = this.p, k = this.act ? this.act.k : null, kk = this.since(), back = kk > 5 ? Math.max(0, 1 - (kk - 5) / 1.2) : 1;
       const PH = !!BE.draw.scenePhoto(this, 'lying', 'plate');
-      g.save(); if (PH) { g.translate(120, 130); g.scale(0.8, 0.8); }   // 실사는 들어 올린 다리가 화면 안에 들어오게 줄임(SLR 과 같게)
+      g.save(); if (PH) { g.translate(60, 88); g.scale(0.9, 0.9); }   // 실사: Kernig 정상(무릎 끝까지 폄)이면 다리가 수직으로 서므로 SLR 과 같은 0.9배(전엔 0.8배라 사진이 작았음)
       if (k === 'neck') {
         const max = 45 * (1 - 0.8 * (p.stiff || 0)), pr = ease(kk / 2) * back, br = p.brudz ? pr : 0;
         lying(this, g, { neck: max * pr, hipN: 55 * br, kneeN: 100 * br, hipF: 55 * br, kneeF: 100 * br });
