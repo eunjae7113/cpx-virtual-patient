@@ -30,6 +30,7 @@
     setAvatar(a) { this.av = a || 'm_m'; }
     setTask(task, p) { this.stop(); this.task = task; this.p = p || {}; this.sel = null; this.act = null; this.felt = ''; this.said = null; this.draw(); }
     scene() { return (BodyEngine.SCENES || {})[this.task]; }
+    hint() { const sc = this.scene(); return !sc ? '' : sc.hintOf ? sc.hintOf(this) : sc.hint || ''; }   // 환자에 따라 다른 안내(남성 생식기 등)
     points() { const sc = this.scene(); return sc && sc.pts ? sc.pts.call(this) : (POINTS[this.task] || (() => [])).call(this); }
     // 마지막 진찰 동작(k = 지점 키, 'act' = 진찰하기)에서 지난 초. 없으면 아주 큰 수
     since(k) { return this.act && (k == null || this.act.k === k) ? this.t - this.act.t0 : 1e9; }
@@ -210,7 +211,7 @@
       }
       if (this.sel && SOUND_TASKS.includes(this.task)) this.stetho(g, this.sel);
       g.fillStyle = '#cfe0dc'; g.font = '600 20px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'left';
-      g.fillText(this.sel ? this.sel.n : sc && sc.hint ? sc.hint : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
+      g.fillText(this.sel ? this.sel.n : this.hint() ? this.hint() : (pts.length ? '동그라미를 눌러 진찰하세요' : ''), 28, 44);
       if (this.sel && SOUND_TASKS.includes(this.task)) { g.font = '14px "IBM Plex Sans KR", sans-serif'; g.fillStyle = '#93a8a3'; g.fillText(BodyEngine.muted ? '소리 꺼짐 — 위쪽 🔇 단추로 켜기' : '소리가 반복 재생됩니다 · ■ 멈춤', 28, 68); g.fillText(this.clip ? '실제 녹음(마네킹) · HLS-CMDS, CC BY 4.0' : '합성음(교육용 근사)', 28, 88); }
       if (this.felt) this.feltBox(g, this.felt); else this.feltH = 0;
     }

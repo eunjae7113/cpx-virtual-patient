@@ -1412,7 +1412,7 @@
       return { felt: f.join(' '), say };
     },
   };
-  S.pelvic = {
+  const PELVIC_F = {
     pts() { return [{ k: 'spec', x: 600, y: 290, n: '질경으로 자궁경부 보기' }, { k: 'cmt', x: 600, y: 470, n: '양손 진찰 — 자궁경부 흔들기' }, { k: 'adR', x: 420, y: 470, n: '양손 진찰 — 오른쪽 부속기' }, { k: 'adL', x: 780, y: 470, n: '양손 진찰 — 왼쪽 부속기' }, { k: 'ut', x: 600, y: 130, n: '양손 진찰 — 자궁 크기·모양' }]; },
     hint: '동그라미를 눌러 질경 진찰·양손 진찰을 합니다(도식)',
     draw(g) {
@@ -1438,6 +1438,92 @@
       const side = k === 'adR' ? 'R' : 'L', hit = p.adnexa === side || p.adnexa === 'both', mass = p.mass === side;
       return { felt: [mass ? `덩어리가 만져짐${p.fixed ? '(잘 움직이지 않음)' : ''}.` : '', hit ? '누르면 아파함.' : '', !hit && !mass ? '덩어리·압통 없음.' : ''].join(' ').trim(), say: hit ? '아, 그쪽이 아파요.' : '' };
     },
+  };
+
+  // ---- 남성 생식기 진찰(도식, 11-28): 남성 환자는 78항목 '부인과 진찰' 자리에 이 장면(index.src.html sexName).
+  //      파라미터(tools/body_presets.py mg_*): tor 고환 염전 쪽, epi 부고환염 쪽, orch 고환염 쪽, tmass 고환 덩어리 쪽, red 음낭 발적 쪽,
+  //      swell 음낭 부기 쪽, ud 요도 분비물, les 'wart'|'herpes' 음경 병변(n 개수). 진찰 지점은 모든 남성 케이스가 같음(정답이 새지 않게)
+  const MSIDE = { R: -1, L: 1 };
+  const PELVIC_M = {
+    pts() {
+      const o = [{ k: 'pen', x: 600, y: 215, n: '음경·요도구 보기' }, { k: 'trans', x: 600, y: 515, n: '음낭에 빛 비추기(투광)' }];
+      for (const [k, d] of SIDES) {
+        const sn = k === 'R' ? '오른쪽' : '왼쪽';
+        o.push({ k: 't' + k, x: 600 + d * 62, y: 410, n: `${sn} 고환 촉진(들어 올려 보기)` }, { k: 'e' + k, x: 600 + d * 112, y: 362, n: `${sn} 부고환 촉진` },
+          { k: 'c' + k, x: 600 + d * 250, y: 470, n: `${sn} 거고근 반사(허벅지 안쪽 긋기)` }, { k: 'i' + k, x: 600 + d * 200, y: 150, n: `${sn} 서혜부(기침해 보기)` });
+      }
+      return o;
+    },
+    hint: '동그라미를 눌러 음경·음낭·고환·부고환을 진찰합니다(도식). 양쪽을 비교하세요',
+    draw(g) {
+      const p = this.p, sk = this.skin(), red = '#c0504a'; floor(g, 560);
+      // 아랫배·허벅지
+      g.fillStyle = mix(sk, '#000000', 0.08); g.beginPath(); g.moveTo(300, 30); g.lineTo(900, 30); g.quadraticCurveTo(930, 300, 880, 555); g.lineTo(700, 555); g.quadraticCurveTo(660, 330, 600, 290); g.quadraticCurveTo(540, 330, 500, 555); g.lineTo(320, 555); g.quadraticCurveTo(270, 300, 300, 30); g.fill();
+      g.strokeStyle = LINE; g.lineWidth = 2; g.stroke();
+      g.setLineDash([6, 6]); g.strokeStyle = 'rgba(0,0,0,.25)';
+      for (const d of [-1, 1]) { g.beginPath(); g.moveTo(600 + d * 290, 70); g.quadraticCurveTo(600 + d * 200, 150, 600 + d * 70, 190); g.stroke(); }
+      g.setLineDash([]);
+      // 음낭(양쪽) — 부기·발적
+      for (const [k, d] of SIDES) {
+        const sw = p.swell === k ? 1.3 : 1, x = 600 + d * 62, y = 400 + (sw - 1) * 30;
+        ell(g, x, y, 78 * sw, 92 * sw, mix(mix(sk, '#8a5a48', 0.25), red, p.red === k ? 0.45 : 0), LINE);
+      }
+      g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.beginPath(); g.moveTo(600, 330); g.lineTo(600, 490); g.stroke();   // 음낭 가운데 솔기
+      // 고환·부고환(피부 아래, 점선 윤곽)
+      for (const [k, d] of SIDES) {
+        const tor = p.tor === k, big = p.orch === k ? 1.35 : tor ? 1.15 : 1, x = 600 + d * 62, y = tor ? 365 : 410;
+        g.save(); g.translate(x, y); if (tor) g.rotate(d * 1.25); g.setLineDash([5, 4]);
+        ell(g, 0, 0, 30 * big, 42 * big, 'rgba(255,255,255,.10)', 'rgba(60,30,20,.55)', 2);
+        const ep = p.epi === k ? 1.6 : 1;                                   // 부고환 = 고환 뒤 위쪽 바깥
+        ell(g, d * 26 * big, -26 * big, 13 * ep, 24 * ep, p.epi === k ? 'rgba(200,70,60,.35)' : 'rgba(255,255,255,.06)', 'rgba(60,30,20,.45)', 2);
+        g.setLineDash([]); g.restore();
+        if (p.tmass === k) {                                               // 바깥쪽 울퉁불퉁한 덩어리
+          g.fillStyle = 'rgba(120,80,60,.55)'; g.beginPath();
+          for (let i = 0; i <= 12; i++) { const a = i / 12 * 6.283, r = 16 + (i % 2) * 5; g.lineTo(x + d * 24 + Math.cos(a) * r, y + 8 + Math.sin(a) * r); }
+          g.fill();
+        }
+      }
+      // 음경 + 귀두 + 요도구
+      rrect(g, 566, 170, 68, 200, 30, mix(sk, '#7a4a3a', 0.18), LINE);
+      ell(g, 600, 372, 38, 30, mix(sk, '#c06060', 0.3), LINE); g.strokeStyle = '#5a2a20'; g.lineWidth = 3; g.beginPath(); g.moveTo(600, 386); g.lineTo(600, 398); g.stroke();
+      if (p.ud) { g.fillStyle = '#d8c060'; g.beginPath(); g.moveTo(594, 398); g.quadraticCurveTo(600, 425, 606, 398); g.fill(); }
+      if (p.les === 'wart') for (let i = 0; i < (p.n || 3); i++) { const y = 200 + i * 42, x = 588 + (i % 2) * 18; dots(g, BE.mulberry(20 + i), 6, x, y, 6, 6, 3.2, mix(sk, '#fff0e0', 0.35)); }
+      if (p.les === 'herpes') { const r = BE.mulberry(12); for (let i = 0; i < (p.n || 6); i++) { const x = 586 + r() * 26, y = 240 + r() * 50; if (i % 3 === 2) ell(g, x, y, 6, 4, '#b03a30', '#f0e0b0', 1.5); else ell(g, x, y, 4.5, 4.5, 'rgba(255,250,235,.85)', 'rgba(150,60,50,.6)', 1.2); } }
+      note(g, '환자 오른쪽', 180, 300); note(g, '환자 왼쪽', 1020, 300); note(g, '남성 생식기(도식, 실제 사진 아님) · 점선 = 피부 아래 고환·부고환', CX, 585);
+    },
+    exam(q) {
+      const p = this.p, k = q.k, kid = /^c_|^nb/.test(this.av || ''), cry = '(아이가 울면서 몸을 비튼다)';
+      if (k === 'pen') {
+        const f = [p.les === 'wart' ? `음경 줄기에 작은 살색 돌기(사마귀) ${p.n || ''}개.` : p.les === 'herpes' ? '음경 몸통에 무리 지은 작은 물집, 일부는 터져 얕은 궤양.' : '음경 피부 병변 없음.',
+          p.ud ? '요도구에 노란빛 분비물이 조금 묻어 나옴.' : '요도구 정상, 분비물 없음.'];
+        return { felt: f.join(' '), say: p.les === 'herpes' ? '아, 따가워요.' : '' };
+      }
+      if (k === 'trans') return { felt: p.tmass ? `${p.tmass === 'R' ? '오른쪽' : '왼쪽'} 덩어리는 빛이 투과하지 않음(액체가 아님).` : '빛을 비춰도 음낭 안에 비치는 액체 고임 없음.' };
+      const side = k.slice(1), sn = side === 'R' ? '오른쪽' : '왼쪽';
+      if (k[0] === 't') {
+        if (p.tor === side) return { felt: `${sn} 고환이 위로 올라가 가로로 누워 있고 단단하며 몹시 아파함. 들어 올려도 통증이 줄지 않음.`, say: kid ? cry : '아악! 만지지 마세요!' };
+        if (p.orch === side) return { felt: `${sn} 고환 전체가 커지고 누르면 아파함.`, say: kid ? cry : '아, 아파요.' };
+        if (p.epi === side) return { felt: `${sn} 고환 위치는 정상, 뒤쪽을 누르면 몹시 아파함. 받쳐 들자 통증이 줄어든다고 함.`, say: '아… 받쳐 주니까 좀 나아요.' };
+        if (p.tmass === side) return { felt: `${sn} 고환 바깥쪽에 단단하고 울퉁불퉁한 덩어리가 고환에 붙어 만져짐. 압통 없음.` };
+        return { felt: `${sn} 고환 크기·단단함 정상, 압통·덩어리 없음.` };
+      }
+      if (k[0] === 'e') {
+        if (p.epi === side) return { felt: `${sn} 부고환이 붓고 단단하며 몹시 아파함.`, say: '아, 거기요!' };
+        if (p.tor === side) return { felt: '고환과 부고환의 경계가 잘 구분되지 않고 몹시 아파함.', say: kid ? cry : '아파요!' };
+        return { felt: `${sn} 부고환 압통·부기 없음.` };
+      }
+      if (k[0] === 'c') return { felt: p.tor === side ? `${sn} 허벅지 안쪽을 그어도 고환이 올라가지 않음(거고근 반사 소실).` : `${sn} 허벅지 안쪽을 긋자 같은 쪽 고환이 위로 올라감(거고근 반사 있음).` };
+      if (k[0] === 'i') return { felt: `기침해도 ${sn} 사타구니에 밀려 나오는 덩어리 없음.`, say: '(콜록)' };
+      return {};
+    },
+  };
+  // 부인과 진찰 자리: 여성 = 질경·양손 진찰, 남성 = 남성 생식기 진찰
+  const pelvicOf = (e) => (e.look().male ? PELVIC_M : PELVIC_F);
+  S.pelvic = {
+    pts() { return pelvicOf(this).pts.call(this); },
+    hint: PELVIC_F.hint, hintOf(e) { return pelvicOf(e).hint; },
+    draw(g) { return pelvicOf(this).draw.call(this, g); },
+    exam(q) { return pelvicOf(this).exam.call(this, q); },
   };
 
   // ---- 실사 몸(감각·근력·관절 장면 왼쪽의 몸 그림 대신): 앞모습 사진(머리~엉덩이) + 앉은 다리 사진(무릎~발)을 나란히.
