@@ -1488,7 +1488,7 @@
       ell(g, 600, 372, 38, 30, mix(sk, '#c06060', 0.3), LINE); g.strokeStyle = '#5a2a20'; g.lineWidth = 3; g.beginPath(); g.moveTo(600, 386); g.lineTo(600, 398); g.stroke();
       if (p.ud) { g.fillStyle = '#d8c060'; g.beginPath(); g.moveTo(594, 398); g.quadraticCurveTo(600, 425, 606, 398); g.fill(); }
       if (p.les === 'wart') for (let i = 0; i < (p.n || 3); i++) { const y = 200 + i * 42, x = 588 + (i % 2) * 18; dots(g, BE.mulberry(20 + i), 6, x, y, 6, 6, 3.2, mix(sk, '#fff0e0', 0.35)); }
-      if (p.les === 'herpes') { const r = BE.mulberry(12); for (let i = 0; i < (p.n || 6); i++) { const x = 586 + r() * 26, y = 240 + r() * 50; if (i % 3 === 2) ell(g, x, y, 6, 4, '#b03a30', '#f0e0b0', 1.5); else ell(g, x, y, 4.5, 4.5, 'rgba(255,250,235,.85)', 'rgba(150,60,50,.6)', 1.2); } }
+      if (p.les === 'herpes') { ell(g, 600, 265, 26, 38, 'rgba(200,70,60,.35)'); const r = BE.mulberry(12); for (let i = 0; i < (p.n || 6); i++) { const x = 586 + r() * 26, y = 240 + r() * 50; if (i % 3 === 2) ell(g, x, y, 6, 4, '#b03a30', '#f0e0b0', 1.5); else ell(g, x, y, 4.5, 4.5, 'rgba(255,250,235,.85)', 'rgba(150,60,50,.6)', 1.2); } }
       note(g, '환자 오른쪽', 180, 300); note(g, '환자 왼쪽', 1020, 300); note(g, '남성 생식기(도식, 실제 사진 아님) · 점선 = 피부 아래 고환·부고환', CX, 585);
     },
     exam(q) {
